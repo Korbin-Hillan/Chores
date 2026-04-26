@@ -37,7 +37,10 @@ export async function buildApp(options: BuildAppOptions = {}) {
         }
       : loggerBase;
 
-  const app = Fastify({ logger: loggerConfig });
+  const app = Fastify({
+    logger: loggerConfig,
+    bodyLimit: env.BODY_LIMIT_BYTES,
+  });
 
   await app.register(helmet);
   await app.register(cors, { origin: true });

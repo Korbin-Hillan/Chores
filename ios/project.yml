@@ -44,12 +44,12 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        API_BASE_URL: http://localhost:8080
+        API_BASE_URL: https://choresapp-api.onrender.com
       configs:
         Debug:
-          API_BASE_URL: http://localhost:8080
+          API_BASE_URL: https://choresapp-api.onrender.com
         Release:
-          API_BASE_URL: https://choresapp.example.com
+          API_BASE_URL: https://choresapp-api.onrender.com
 
   ChoresAppTests:
     type: bundle.unit-test

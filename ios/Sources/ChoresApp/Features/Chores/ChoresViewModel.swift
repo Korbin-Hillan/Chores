@@ -156,6 +156,18 @@ final class ChoresViewModel {
         )
     }
 
+    func deleteRoom(_ roomId: String, householdId: String) async {
+        do {
+            try await client.delete("/households/\(householdId)/rooms/\(roomId)")
+            rooms.removeAll { $0.id == roomId }
+            choresByRoom[roomId] = nil
+        } catch let err as APIError {
+            error = err
+        } catch {
+            self.error = .server(code: "INTERNAL", message: error.localizedDescription)
+        }
+    }
+
     func updateChore(
         choreId: String,
         body: UpdateChoreBody,

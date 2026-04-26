@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { Chore } from "../models/chore.js";
 import { Room, toSafeRoom } from "../models/room.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireMembership } from "../middleware/requireMembership.js";
@@ -55,5 +56,24 @@ export async function roomRoutes(app: FastifyInstance): Promise<void> {
     if (!room) throw new AppError(404, "NOT_FOUND", "Room not found");
 
     return reply.send(toSafeRoom(room));
+  });
+
+  app.delete("/:roomId", async (request, reply) => {
+    const { householdId, roomId } = request.params as { householdId: string; roomId: string };
+
+    const room = await Room.findOne({ _id: roomId, householdId });
+    if (!room) throw new AppError(404, "NOT_FOUND", "Room not found");
+
+    const hasChores = await Chore.exists({ householdId, roomId });
+    if (hasChores) {
+      throw new AppError(
+        400,
+        "VALIDATION_FAILED",
+        "Move, archive, or delete the chores in this room before deleting it.",
+      );
+    }
+
+    await Room.deleteOne({ _id: roomId, householdId });
+    return reply.status(204).send();
   });
 }

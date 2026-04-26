@@ -7,7 +7,7 @@ private let roomIcons = [
 ]
 
 struct RoomEditorView: View {
-    let viewModel: ChoresViewModel
+    @Bindable var viewModel: ChoresViewModel
     let householdId: String
     let room: APIRoom?
 
@@ -58,6 +58,7 @@ struct RoomEditorView: View {
                 }
             }
             .loadingOverlay(isLoading)
+            .errorAlert($viewModel.error)
         }
         .onAppear {
             guard !hasLoadedInitialValues else { return }
@@ -97,12 +98,13 @@ struct RoomEditorView: View {
 }
 
 struct ManageRoomsView: View {
-    let viewModel: ChoresViewModel
+    @Bindable var viewModel: ChoresViewModel
     let householdId: String
 
     @State private var showArchived = false
     @State private var showEditor = false
     @State private var selectedRoom: APIRoom?
+    @State private var roomPendingDelete: APIRoom?
 
     private var rooms: [APIRoom] {
         viewModel.allRooms(includeArchived: showArchived)
@@ -137,6 +139,9 @@ struct ManageRoomsView: View {
                             Task { await viewModel.setRoomArchived(room.id, archived: !room.archived, householdId: householdId) }
                         }
                         .tint(room.archived ? .green : .orange)
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            roomPendingDelete = room
+                        }
                     }
                 }
             } header: {
@@ -144,6 +149,8 @@ struct ManageRoomsView: View {
             } footer: {
                 if rooms.isEmpty {
                     Text(showArchived ? "No rooms found." : "No active rooms.")
+                } else {
+                    Text("Delete only works after all chores have been moved, archived, or deleted.")
                 }
             }
         }
@@ -160,5 +167,26 @@ struct ManageRoomsView: View {
         .sheet(isPresented: $showEditor) {
             RoomEditorView(viewModel: viewModel, householdId: householdId, room: selectedRoom)
         }
+        .confirmationDialog(
+            "Delete room?",
+            isPresented: Binding(
+                get: { roomPendingDelete != nil },
+                set: { if !$0 { roomPendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let room = roomPendingDelete {
+                Button("Delete \"\(room.name)\"", role: .destructive) {
+                    Task {
+                        await viewModel.deleteRoom(room.id, householdId: householdId)
+                        roomPendingDelete = nil
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { roomPendingDelete = nil }
+        } message: {
+            Text("This permanently removes the room. Any chores still in it must be moved, archived, or deleted first.")
+        }
+        .errorAlert($viewModel.error)
     }
 }

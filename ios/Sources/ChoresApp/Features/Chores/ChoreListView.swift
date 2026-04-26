@@ -11,6 +11,7 @@ struct ChoreListView: View {
     @State private var showGenerate = false
     @State private var showArchived = false
     @State private var selectedChore: APIChore?
+    @State private var preferredRoomIdForNewChore: String?
 
     var householdId: String { authStore.currentHouseholdId ?? "" }
 
@@ -55,6 +56,7 @@ struct ChoreListView: View {
                     Menu("Add", systemImage: "plus") {
                         Button("Add chore", systemImage: "checkmark.circle") {
                             selectedChore = nil
+                            preferredRoomIdForNewChore = nil
                             showChoreEditor = true
                         }
                         Button("Add room", systemImage: "plus.rectangle") { showAddRoom = true }
@@ -71,7 +73,8 @@ struct ChoreListView: View {
                     viewModel: viewModel,
                     householdId: householdId,
                     rooms: choreEditorRooms,
-                    chore: selectedChore
+                    chore: selectedChore,
+                    preferredRoomId: preferredRoomIdForNewChore
                 )
             }
             .sheet(isPresented: $showGenerate) {
@@ -93,10 +96,24 @@ struct ChoreListView: View {
                 Toggle("Show archived chores and rooms", isOn: $showArchived)
             }
 
-            ForEach(visibleRooms) { room in
+            ForEach(Array(visibleRooms.enumerated()), id: \.element.id) { _, room in
                 let chores = viewModel.chores(for: room.id, includeArchived: showArchived)
-                if !chores.isEmpty || room.archived {
-                    Section {
+                Section {
+                    if chores.isEmpty {
+                        if room.archived {
+                            Text("No chores in this archived room.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button {
+                                selectedChore = nil
+                                preferredRoomIdForNewChore = room.id
+                                showChoreEditor = true
+                            } label: {
+                                Label("Add a chore to \(room.name)", systemImage: "plus.circle")
+                            }
+                        }
+                    } else {
                         ForEach(chores) { chore in
                             let schedule = chore.scheduleSnapshot()
                             NavigationLink {
@@ -122,14 +139,26 @@ struct ChoreListView: View {
                                 .tint(chore.archived ? .green : .orange)
                             }
                         }
-                    } header: {
-                        HStack {
-                            Label(room.name, systemImage: room.icon ?? "rectangle.on.rectangle")
-                            if room.archived {
-                                Text("Archived")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    HStack {
+                        Label(room.name, systemImage: room.icon ?? "rectangle.on.rectangle")
+                        Spacer()
+                        if room.archived {
+                            Text("Archived")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button {
+                                selectedChore = nil
+                                preferredRoomIdForNewChore = room.id
+                                showChoreEditor = true
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundStyle(Color.accentColor)
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Add chore to \(room.name)")
                         }
                     }
                 }

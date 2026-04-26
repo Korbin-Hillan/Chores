@@ -5,6 +5,7 @@ struct ChoreEditorView: View {
     let householdId: String
     let rooms: [APIRoom]
     let chore: APIChore?
+    let preferredRoomId: String?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -71,7 +72,7 @@ struct ChoreEditorView: View {
                 estimatedMinutes = chore.estimatedMinutes.map(String.init) ?? ""
                 points = chore.points
             } else if selectedRoomId.isEmpty {
-                selectedRoomId = rooms.first?.id ?? ""
+                selectedRoomId = preferredRoomId ?? rooms.first?.id ?? ""
             }
         }
     }
@@ -122,5 +123,11 @@ struct ChoreEditorView: View {
 }
 
 #Preview {
-    ChoreEditorView(viewModel: ChoresViewModel(), householdId: "test", rooms: [], chore: nil)
+    ChoreEditorView(
+        viewModel: ChoresViewModel(),
+        householdId: "test",
+        rooms: [],
+        chore: nil,
+        preferredRoomId: nil
+    )
 }

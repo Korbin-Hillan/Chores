@@ -24,6 +24,17 @@ export function errorHandler(
     return;
   }
 
+  if (error.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+    reply.status(413).send({
+      error: {
+        code: "VALIDATION_FAILED",
+        message: "Request body is too large. If you're uploading a room photo, use an image under 4 MB.",
+        details: {},
+      },
+    });
+    return;
+  }
+
   request.log.error({ err: error }, "Unhandled error");
   reply.status(500).send({
     error: { code: "INTERNAL", message: "Internal server error", details: {} },
