@@ -41,6 +41,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({
     logger: loggerConfig,
     bodyLimit: env.BODY_LIMIT_BYTES,
+    trustProxy: true,
   });
 
   await app.register(helmet);

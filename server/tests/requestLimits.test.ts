@@ -36,3 +36,26 @@ describe("request size handling", () => {
     ).toContain("Request body is too large");
   });
 });
+
+describe("rate limiting", () => {
+  it("returns a 429 when the rate limit is exceeded", async () => {
+    // We need to hit the limit of 200 requests.
+    // app.inject is fast since it doesn't use the network.
+    for (let i = 0; i < 200; i++) {
+      await app.inject({
+        method: "GET",
+        url: "/health",
+      });
+    }
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/health",
+    });
+
+    expect(res.statusCode).toBe(429);
+    const body = res.json<{ error: { code: string; message: string } }>();
+    expect(body.error.code).toBe("RATE_LIMIT_EXCEEDED");
+    expect(body.error.message).toContain("Rate limit exceeded");
+  });
+});

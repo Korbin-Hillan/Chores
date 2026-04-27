@@ -35,6 +35,17 @@ export function errorHandler(
     return;
   }
 
+  if (error.statusCode === 429) {
+    reply.status(429).send({
+      error: {
+        code: "RATE_LIMIT_EXCEEDED",
+        message: error.message,
+        details: {},
+      },
+    });
+    return;
+  }
+
   request.log.error({ err: error }, "Unhandled error");
   reply.status(500).send({
     error: { code: "INTERNAL", message: "Internal server error", details: {} },
