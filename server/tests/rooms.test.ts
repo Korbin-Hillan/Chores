@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { startMongo, stopMongo, clearMongo } from "./helpers/mongo.js";
+import { Completion } from "../src/models/completion.js";
 
 process.env.MONGO_URI ??= "mongodb://placeholder/test";
 process.env.JWT_SECRET ??= "test_jwt_secret_at_least_thirty_two_characters_long_xx";
@@ -88,7 +89,7 @@ describe("room routes", () => {
     expect(deleteRes.statusCode).toBe(204);
   });
 
-  it("rejects deleting a room that still has chores", async () => {
+  it("deletes a room and its chores", async () => {
     const { accessToken, householdId } = await createAuthedHousehold();
 
     const roomRes = await app.inject({
@@ -111,6 +112,15 @@ describe("room routes", () => {
       },
     });
     expect(choreRes.statusCode).toBe(201);
+    const { id: choreId } = choreRes.json<{ id: string }>();
+
+    const completeRes = await app.inject({
+      method: "POST",
+      url: `/households/${householdId}/chores/${choreId}/complete`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { tz: "UTC" },
+    });
+    expect(completeRes.statusCode).toBe(201);
 
     const deleteRes = await app.inject({
       method: "DELETE",
@@ -118,9 +128,21 @@ describe("room routes", () => {
       headers: { authorization: `Bearer ${accessToken}` },
     });
 
-    expect(deleteRes.statusCode).toBe(400);
-    expect(deleteRes.json<{ error: { message: string } }>().error.message).toContain(
-      "Move or delete the chores in this room before deleting it.",
-    );
+    expect(deleteRes.statusCode).toBe(204);
+
+    const roomListRes = await app.inject({
+      method: "GET",
+      url: `/households/${householdId}/rooms?includeArchived=true`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(roomListRes.json<Array<{ id: string }>>()).toEqual([]);
+
+    const choreListRes = await app.inject({
+      method: "GET",
+      url: `/households/${householdId}/chores?includeArchived=true`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(choreListRes.json<Array<{ id: string }>>()).toEqual([]);
+    await expect(Completion.countDocuments({ householdId, choreId })).resolves.toBe(0);
   });
 });

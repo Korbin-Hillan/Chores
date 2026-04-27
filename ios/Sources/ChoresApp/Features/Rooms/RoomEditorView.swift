@@ -146,7 +146,7 @@ struct ManageRoomsView: View {
                 if rooms.isEmpty {
                     Text(showArchived ? "No rooms found." : "No active rooms.")
                 } else {
-                    Text("Delete only works after all chores have been moved or deleted.")
+                    Text("Deleting a room also deletes every chore in that room.")
                 }
             }
         }
@@ -181,7 +181,7 @@ struct ManageRoomsView: View {
             }
             Button("Cancel", role: .cancel) { roomPendingDelete = nil }
         } message: {
-            Text("This permanently removes the room. Any chores still in it must be moved or deleted first.")
+            Text("This permanently removes the room and every chore in it.")
         }
         .errorAlert($viewModel.error)
     }
