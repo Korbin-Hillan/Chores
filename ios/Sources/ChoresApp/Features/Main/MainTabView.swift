@@ -5,9 +5,13 @@ struct MainTabView: View {
 
     var body: some View {
         TabView {
+            TodayView()
+                .tabItem {
+                    Label("Today", systemImage: "sun.max")
+                }
             ChoreListView()
                 .tabItem {
-                    Label("Chores", systemImage: "checkmark.circle")
+                    Label("By room", systemImage: "square.grid.2x2")
                 }
             FeedView()
                 .tabItem {

@@ -116,7 +116,7 @@ struct ManageRoomsView: View {
             Section {
                 ForEach(rooms) { room in
                     HStack {
-                        Label(room.name, systemImage: room.icon ?? "rectangle.on.rectangle")
+                        RoomHeaderLabel(room: room)
                         Spacer()
                         if room.archived {
                             Text("Archived")

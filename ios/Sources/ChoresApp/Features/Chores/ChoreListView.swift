@@ -1,5 +1,293 @@
 import SwiftUI
 import SwiftData
+import UIKit
+
+struct TodayView: View {
+    @Environment(AuthStore.self) private var authStore
+    @Environment(\.modelContext) private var modelContext
+    @State private var viewModel = ChoresViewModel()
+    @State private var completionChore: APIChore?
+    @State private var milestoneStreak: Int?
+    @State private var isCompletingChoreId: String?
+
+    private var householdId: String { authStore.currentHouseholdId ?? "" }
+
+    private var currentMember: APIHouseholdMember? {
+        guard let currentUserId = authStore.currentUser?.id else { return nil }
+        return viewModel.householdMembers.first { $0.userId == currentUserId }
+    }
+
+    private var activeRoomIds: Set<String> {
+        Set(viewModel.allRooms().map(\.id))
+    }
+
+    private var activeChores: [APIChore] {
+        viewModel.choresByRoom.values
+            .flatMap { $0 }
+            .filter { !$0.archived && activeRoomIds.contains($0.roomId) }
+    }
+
+    private var overdueChores: [APIChore] {
+        activeChores
+            .filter {
+                if case .overdue = $0.scheduleSnapshot().state { return true }
+                return false
+            }
+            .sorted(by: sortByDueThenTitle)
+    }
+
+    private var dueTodayChores: [APIChore] {
+        activeChores
+            .filter {
+                if case .dueToday = $0.scheduleSnapshot().state { return true }
+                return false
+            }
+            .sorted(by: sortByDueThenTitle)
+    }
+
+    private var quickWinChores: [APIChore] {
+        activeChores
+            .filter { chore in
+                guard chore.recurrence.kind != .none else { return false }
+                if case .upcoming = chore.scheduleSnapshot().state { return true }
+                return false
+            }
+            .sorted(by: sortByDueThenTitle)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Group {
+                    if viewModel.isLoading && activeChores.isEmpty {
+                        TodaySkeletonView()
+                    } else if activeChores.isEmpty {
+                        EmptyStateView(
+                            icon: "checklist",
+                            title: "No chores yet",
+                            message: "Add chores by room, then Today becomes the daily action list.",
+                            action: nil,
+                            actionTitle: nil
+                        )
+                    } else {
+                        todayList
+                    }
+                }
+
+                if let milestoneStreak {
+                    MilestoneCelebrationView(streak: milestoneStreak)
+                        .transition(.opacity.combined(with: .scale))
+                        .zIndex(2)
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    self.milestoneStreak = nil
+                                }
+                            }
+                        }
+                }
+            }
+            .navigationTitle("Today")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if let currentMember {
+                        Label {
+                            Text("\(currentMember.displayName ?? authStore.currentUser?.displayName ?? "You") \(currentMember.currentStreak)")
+                        } icon: {
+                            Image(systemName: "flame.fill")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                    }
+                }
+            }
+            .refreshable { await viewModel.load(householdId: householdId, context: modelContext) }
+            .sheet(item: $completionChore) { chore in
+                CompleteChoreSheet(
+                    chore: chore,
+                    householdId: householdId,
+                    viewModel: viewModel
+                )
+            }
+            .errorAlert($viewModel.error)
+        }
+        .task(id: householdId) { await viewModel.load(householdId: householdId, context: modelContext) }
+    }
+
+    private var todayList: some View {
+        List {
+            ChoreBucketSection(
+                title: "Overdue",
+                tint: .red,
+                chores: overdueChores,
+                householdMembers: viewModel.householdMembers,
+                isCompletingChoreId: isCompletingChoreId,
+                onComplete: completeFromSwipe,
+                onOpenSheet: { completionChore = $0 }
+            )
+
+            ChoreBucketSection(
+                title: "Due today",
+                tint: .orange,
+                chores: dueTodayChores,
+                householdMembers: viewModel.householdMembers,
+                isCompletingChoreId: isCompletingChoreId,
+                onComplete: completeFromSwipe,
+                onOpenSheet: { completionChore = $0 }
+            )
+
+            ChoreBucketSection(
+                title: "Quick wins",
+                tint: .gray,
+                chores: quickWinChores,
+                householdMembers: viewModel.householdMembers,
+                isCompletingChoreId: isCompletingChoreId,
+                onComplete: completeFromSwipe,
+                onOpenSheet: { completionChore = $0 }
+            )
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    private func completeFromSwipe(_ chore: APIChore) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        guard !chore.requiresPhotoEvidence else {
+            completionChore = chore
+            return
+        }
+        isCompletingChoreId = chore.id
+        Task {
+            let response = await viewModel.completeChore(chore.id, householdId: householdId)
+            isCompletingChoreId = nil
+            if let streak = response?.membership.currentStreak, [7, 30, 100].contains(streak) {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                    milestoneStreak = streak
+                }
+            }
+        }
+    }
+
+    private func sortByDueThenTitle(_ lhs: APIChore, _ rhs: APIChore) -> Bool {
+        let leftSnapshot = lhs.scheduleSnapshot()
+        let rightSnapshot = rhs.scheduleSnapshot()
+        let leftDate = leftSnapshot.currentDueDate ?? leftSnapshot.nextDueDate ?? .distantFuture
+        let rightDate = rightSnapshot.currentDueDate ?? rightSnapshot.nextDueDate ?? .distantFuture
+        if leftDate != rightDate { return leftDate < rightDate }
+        return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+    }
+}
+
+private struct ChoreBucketSection: View {
+    let title: String
+    let tint: Color
+    let chores: [APIChore]
+    let householdMembers: [APIHouseholdMember]
+    let isCompletingChoreId: String?
+    let onComplete: (APIChore) -> Void
+    let onOpenSheet: (APIChore) -> Void
+
+    var body: some View {
+        Section {
+            if chores.isEmpty {
+                Text("Nothing here.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(chores) { chore in
+                    ChoreRow(
+                        chore: chore,
+                        schedule: chore.scheduleSnapshot(),
+                        assigneeName: displayName(for: chore.assignedToUserId)
+                    )
+                    .opacity(isCompletingChoreId == chore.id ? 0.5 : 1)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button("Complete", systemImage: "checkmark") {
+                            onComplete(chore)
+                        }
+                        .tint(.green)
+                    }
+                    .contextMenu {
+                        Button("Complete with notes", systemImage: "square.and.pencil") {
+                            onOpenSheet(chore)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Label(title, systemImage: "circle.fill")
+                .foregroundStyle(tint)
+        }
+    }
+
+    private func displayName(for userId: String?) -> String? {
+        guard let userId else { return nil }
+        return householdMembers.first(where: { $0.userId == userId })?.displayName
+    }
+}
+
+private struct TodaySkeletonView: View {
+    var body: some View {
+        List {
+            ForEach(["Overdue", "Due today", "Quick wins"], id: \.self) { title in
+                Section(title) {
+                    ForEach(0..<2, id: \.self) { _ in
+                        VStack(alignment: .leading, spacing: 8) {
+                            RoundedRectangle(cornerRadius: 5)
+                                .frame(width: 180, height: 18)
+                            RoundedRectangle(cornerRadius: 4)
+                                .frame(width: 240, height: 12)
+                        }
+                        .foregroundStyle(.quaternary)
+                        .padding(.vertical, 6)
+                        .redacted(reason: .placeholder)
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .disabled(true)
+    }
+}
+
+private struct MilestoneCelebrationView: View {
+    let streak: Int
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.18)
+                .ignoresSafeArea()
+            VStack(spacing: 18) {
+                ZStack {
+                    ForEach(0..<18, id: \.self) { index in
+                        Capsule()
+                            .fill(colors[index % colors.count])
+                            .frame(width: 8, height: 22)
+                            .rotationEffect(.degrees(Double(index) * 21))
+                            .offset(x: CGFloat((index % 6) - 3) * 30, y: CGFloat((index / 6) - 1) * 28)
+                    }
+                }
+                .frame(width: 220, height: 120)
+
+                VStack(spacing: 6) {
+                    Label("\(streak) day streak", systemImage: "flame.fill")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.orange)
+                    Text("Milestone reached")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(24)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var colors: [Color] {
+        [.red, .orange, .yellow, .green, .blue, .purple]
+    }
+}
 
 struct ChoreListView: View {
     @Environment(AuthStore.self) private var authStore
@@ -37,8 +325,7 @@ struct ChoreListView: View {
         NavigationStack {
             Group {
                 if viewModel.isLoading && viewModel.allRooms(includeArchived: true).isEmpty {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    RoomChoreSkeletonView()
                 } else if visibleRooms.isEmpty {
                     EmptyStateView(
                         icon: "house",
@@ -161,6 +448,7 @@ struct ChoreListView: View {
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button("Complete", systemImage: "checkmark") {
+                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                     completionChore = chore
                                 }
                                 .tint(.green)
@@ -169,7 +457,7 @@ struct ChoreListView: View {
                     }
                 } header: {
                     HStack {
-                        Label(room.name, systemImage: room.icon ?? "rectangle.on.rectangle")
+                        RoomHeaderLabel(room: room)
                         Spacer()
                         if room.archived {
                             Text("Archived")
@@ -251,6 +539,53 @@ struct ChoreListView: View {
     private func displayName(for userId: String?) -> String? {
         guard let userId else { return nil }
         return viewModel.householdMembers.first(where: { $0.userId == userId })?.displayName
+    }
+}
+
+private struct RoomChoreSkeletonView: View {
+    var body: some View {
+        List {
+            ForEach(0..<3, id: \.self) { _ in
+                Section {
+                    ForEach(0..<3, id: \.self) { _ in
+                        VStack(alignment: .leading, spacing: 8) {
+                            RoundedRectangle(cornerRadius: 5)
+                                .frame(width: 170, height: 18)
+                            RoundedRectangle(cornerRadius: 4)
+                                .frame(width: 230, height: 12)
+                        }
+                        .foregroundStyle(.quaternary)
+                        .padding(.vertical, 6)
+                        .redacted(reason: .placeholder)
+                    }
+                } header: {
+                    RoundedRectangle(cornerRadius: 4)
+                        .frame(width: 120, height: 14)
+                        .foregroundStyle(.quaternary)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .disabled(true)
+    }
+}
+
+struct RoomHeaderLabel: View {
+    let room: APIRoom
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: room.icon ?? "rectangle.on.rectangle")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.tint)
+                .frame(width: 26, height: 26)
+                .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .stroke(.tint.opacity(0.18), lineWidth: 1)
+                )
+            Text(room.name)
+        }
     }
 }
 

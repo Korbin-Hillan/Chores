@@ -108,13 +108,14 @@ final class ChoresViewModel {
         }
     }
 
+    @discardableResult
     func completeChore(
         _ choreId: String,
         householdId: String,
         notes: String? = nil,
         photoData: Data? = nil,
         photoContentType: String? = nil
-    ) async {
+    ) async -> CompleteChoreResponse? {
         let tz = TimeZone.current.identifier
         let body = CompleteChoreBody(
             notes: notes,
@@ -123,17 +124,20 @@ final class ChoresViewModel {
             photoContentType: photoContentType
         )
         do {
-            let _: CompleteChoreResponse = try await client.send(
+            let response: CompleteChoreResponse = try await client.send(
                 path: "/households/\(householdId)/chores/\(choreId)/complete",
                 method: "POST",
                 body: body
             )
             // Refresh to update the list
             await load(householdId: householdId, context: ModelContext(try! ModelContainer(for: LocalRoom.self, LocalChore.self)))
+            return response
         } catch let err as APIError {
             error = err
+            return nil
         } catch {
             self.error = .server(code: "INTERNAL", message: error.localizedDescription)
+            return nil
         }
     }
 

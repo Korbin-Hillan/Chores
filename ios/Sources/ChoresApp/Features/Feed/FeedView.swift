@@ -33,8 +33,7 @@ struct FeedView: View {
         NavigationStack {
             Group {
                 if viewModel.isLoading && viewModel.items.isEmpty {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    FeedSkeletonView()
                 } else if viewModel.items.isEmpty {
                     EmptyStateView(
                         icon: "list.bullet.below.rectangle",
@@ -110,6 +109,30 @@ struct FeedItemRow: View {
             assignedTo.id != item.completedBy.id
         else { return nil }
         return "\(item.completedBy.displayName) did \(assignedTo.displayName)'s \(chore.title) 🌟"
+    }
+}
+
+private struct FeedSkeletonView: View {
+    var body: some View {
+        List {
+            ForEach(0..<6, id: \.self) { _ in
+                HStack(alignment: .top, spacing: 12) {
+                    Circle()
+                        .frame(width: 28, height: 28)
+                    VStack(alignment: .leading, spacing: 8) {
+                        RoundedRectangle(cornerRadius: 5)
+                            .frame(width: 220, height: 16)
+                        RoundedRectangle(cornerRadius: 4)
+                            .frame(width: 150, height: 12)
+                    }
+                }
+                .foregroundStyle(.quaternary)
+                .padding(.vertical, 6)
+                .redacted(reason: .placeholder)
+            }
+        }
+        .listStyle(.plain)
+        .disabled(true)
     }
 }
 

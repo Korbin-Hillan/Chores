@@ -34,7 +34,7 @@ struct LeaderboardView: View {
         NavigationStack {
             Group {
                 if viewModel.isLoading && viewModel.entries.isEmpty {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    LeaderboardSkeletonView()
                 } else if viewModel.entries.isEmpty {
                     EmptyStateView(
                         icon: "trophy",
@@ -115,6 +115,33 @@ struct LeaderboardRow: View {
     }
 }
 
+private struct LeaderboardSkeletonView: View {
+    var body: some View {
+        List {
+            ForEach(0..<6, id: \.self) { index in
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 6)
+                        .frame(width: 32, height: 24)
+                    VStack(alignment: .leading, spacing: 8) {
+                        RoundedRectangle(cornerRadius: 5)
+                            .frame(width: index == 0 ? 170 : 130, height: 16)
+                        RoundedRectangle(cornerRadius: 4)
+                            .frame(width: 95, height: 12)
+                    }
+                    Spacer()
+                    RoundedRectangle(cornerRadius: 5)
+                        .frame(width: 42, height: 22)
+                }
+                .foregroundStyle(.quaternary)
+                .padding(.vertical, 6)
+                .redacted(reason: .placeholder)
+            }
+        }
+        .listStyle(.insetGrouped)
+        .disabled(true)
+    }
+}
+
 @Observable
 @MainActor
 final class RewardsViewModel {
@@ -144,8 +171,6 @@ final class RewardsViewModel {
             members = detail.members
             myRedemptions = mine
 
-            let currentUserRole = members.first { $0.userId == detail.household.adminUserId }?.role
-            _ = currentUserRole
         } catch let err as APIError {
             error = err
         } catch {
@@ -274,7 +299,7 @@ struct RewardsView: View {
         NavigationStack {
             Group {
                 if viewModel.isLoading && viewModel.rewards.isEmpty {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    RewardsSkeletonView()
                 } else {
                     List {
                         balanceSection
@@ -406,6 +431,42 @@ struct RewardsView: View {
         case "rejected": return .red
         default: return .orange
         }
+    }
+}
+
+private struct RewardsSkeletonView: View {
+    var body: some View {
+        List {
+            Section {
+                ForEach(0..<3, id: \.self) { _ in
+                    HStack {
+                        RoundedRectangle(cornerRadius: 5)
+                            .frame(width: 150, height: 16)
+                        Spacer()
+                        RoundedRectangle(cornerRadius: 5)
+                            .frame(width: 70, height: 20)
+                    }
+                    .foregroundStyle(.quaternary)
+                    .padding(.vertical, 6)
+                    .redacted(reason: .placeholder)
+                }
+            }
+            Section {
+                ForEach(0..<4, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 8) {
+                        RoundedRectangle(cornerRadius: 5)
+                            .frame(width: 210, height: 18)
+                        RoundedRectangle(cornerRadius: 4)
+                            .frame(width: 120, height: 12)
+                    }
+                    .foregroundStyle(.quaternary)
+                    .padding(.vertical, 6)
+                    .redacted(reason: .placeholder)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .disabled(true)
     }
 }
 

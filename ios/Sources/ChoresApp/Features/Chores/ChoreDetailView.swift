@@ -274,44 +274,58 @@ struct CompleteChoreSheet: View {
     @State private var photoData: Data?
     @State private var showCamera = false
     @State private var isCompleting = false
+    @State private var milestoneStreak: Int?
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Completion") {
-                    TextField("Notes (optional)", text: $notes, axis: .vertical)
-                        .lineLimit(2...4)
-                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                        Button {
-                            showCamera = true
-                        } label: {
-                            Label("Camera", systemImage: "camera")
+            ZStack {
+                Form {
+                    Section("Completion") {
+                        TextField("Notes (optional)", text: $notes, axis: .vertical)
+                            .lineLimit(2...4)
+                        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                            Button {
+                                showCamera = true
+                            } label: {
+                                Label("Camera", systemImage: "camera")
+                            }
+                        }
+                        PhotosPicker(
+                            selection: $selectedPhoto,
+                            matching: .images,
+                            photoLibrary: .shared()
+                        ) {
+                            Label(photoData == nil ? "Choose from library" : "Change library photo", systemImage: "photo")
+                        }
+                        if let photoData, let image = UIImage(data: photoData) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(height: 160)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        if chore.requiresPhotoEvidence {
+                            Label("Photo required", systemImage: "checkmark.seal")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if chore.requiresParentApproval {
+                            Label("Completion will be pending parent review", systemImage: "hourglass")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    PhotosPicker(
-                        selection: $selectedPhoto,
-                        matching: .images,
-                        photoLibrary: .shared()
-                    ) {
-                        Label(photoData == nil ? "Choose from library" : "Change library photo", systemImage: "photo")
-                    }
-                    if let photoData, let image = UIImage(data: photoData) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(height: 160)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    if chore.requiresPhotoEvidence {
-                        Label("Photo required", systemImage: "checkmark.seal")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if chore.requiresParentApproval {
-                        Label("Completion will be pending parent review", systemImage: "hourglass")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                }
+
+                if let milestoneStreak {
+                    CompletionMilestoneView(streak: milestoneStreak)
+                        .transition(.opacity.combined(with: .scale))
+                        .zIndex(2)
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                dismiss()
+                            }
+                        }
                 }
             }
             .navigationTitle(chore.title)
@@ -339,16 +353,24 @@ struct CompleteChoreSheet: View {
 
     private func complete() {
         isCompleting = true
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         Task {
             defer { isCompleting = false }
-            await viewModel.completeChore(
+            let response = await viewModel.completeChore(
                 chore.id,
                 householdId: householdId,
                 notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes,
                 photoData: photoData,
                 photoContentType: photoData == nil ? nil : "image/jpeg"
             )
-            dismiss()
+            if let streak = response?.membership.currentStreak, [7, 30, 100].contains(streak) {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                    milestoneStreak = streak
+                }
+            } else {
+                dismiss()
+            }
         }
     }
 
@@ -395,6 +417,25 @@ struct CompleteChoreSheet: View {
         return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
+    }
+}
+
+private struct CompletionMilestoneView: View {
+    let streak: Int
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Label("\(streak) day streak", systemImage: "flame.fill")
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.orange)
+            Text("Milestone reached")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(24)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .shadow(radius: 18)
+        .padding()
     }
 }
 

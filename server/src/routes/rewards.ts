@@ -229,7 +229,7 @@ async function getPointBalance(
       $match: {
         householdId: householdObjectId,
         completedByUserId: userObjectId,
-        reviewStatus: { $ne: "rejected" },
+        $or: [{ reviewStatus: "approved" }, { reviewStatus: { $exists: false } }],
       },
     },
     {
