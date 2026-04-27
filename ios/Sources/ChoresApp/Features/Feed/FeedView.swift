@@ -74,8 +74,26 @@ struct FeedItemRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(item.completedBy.displayName) completed **\(item.chore?.title ?? "a chore")**")
                     .font(.subheadline)
+                if let socialText {
+                    Text(socialText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if item.reviewStatus == "pending" {
+                    Label("Pending review", systemImage: "hourglass")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
                 if let notes = item.notes, !notes.isEmpty {
                     Text(notes).font(.caption).foregroundStyle(.secondary)
+                }
+                if item.hasPhoto {
+                    CompletionPhotoView(
+                        householdId: item.chore?.householdId ?? "",
+                        completionId: item.id
+                    )
+                    .frame(width: 96, height: 96)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 Text(timeAgo)
                     .font(.caption2)
@@ -83,6 +101,15 @@ struct FeedItemRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var socialText: String? {
+        guard
+            let chore = item.chore,
+            let assignedTo = item.assignedToAtCompletion,
+            assignedTo.id != item.completedBy.id
+        else { return nil }
+        return "\(item.completedBy.displayName) did \(assignedTo.displayName)'s \(chore.title) 🌟"
     }
 }
 

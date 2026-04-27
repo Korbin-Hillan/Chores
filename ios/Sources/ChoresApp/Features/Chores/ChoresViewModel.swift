@@ -6,6 +6,8 @@ import SwiftData
 final class ChoresViewModel {
     private(set) var rooms: [APIRoom] = []
     private(set) var choresByRoom: [String: [APIChore]] = [:]
+    private(set) var householdMembers: [APIHouseholdMember] = []
+    private(set) var pendingReviewItems: [FeedItem] = []
     private(set) var isLoading = false
     var error: APIError?
 
@@ -32,9 +34,11 @@ final class ChoresViewModel {
                 path: "/households/\(householdId)/chores",
                 query: [URLQueryItem(name: "includeArchived", value: "true")]
             )
-            let (fetchedRooms, fetchedChores) = try await (roomsResult, choresResult)
+            async let detailResult: APIHouseholdDetail = client.send(path: "/households/\(householdId)")
+            let (fetchedRooms, fetchedChores, detail) = try await (roomsResult, choresResult, detailResult)
             rooms = fetchedRooms
             choresByRoom = Dictionary(grouping: fetchedChores, by: \.roomId)
+            householdMembers = detail.members
 
             // Sync to local cache
             for room in fetchedRooms {
@@ -66,9 +70,58 @@ final class ChoresViewModel {
         }
     }
 
-    func completeChore(_ choreId: String, householdId: String, notes: String? = nil) async {
+    func loadPendingReviews(householdId: String) async {
+        do {
+            pendingReviewItems = try await client.send(path: "/households/\(householdId)/completions/pending")
+        } catch {
+            pendingReviewItems = []
+        }
+    }
+
+    func approveCompletion(_ completionId: String, householdId: String) async {
+        do {
+            let _: APICompletion = try await client.send(
+                path: "/households/\(householdId)/completions/\(completionId)/approve",
+                method: "POST",
+                body: Optional<String>.none
+            )
+            pendingReviewItems.removeAll { $0.id == completionId }
+        } catch let err as APIError {
+            error = err
+        } catch {
+            self.error = .server(code: "INTERNAL", message: error.localizedDescription)
+        }
+    }
+
+    func rejectCompletion(_ completionId: String, householdId: String) async {
+        do {
+            let _: APICompletion = try await client.send(
+                path: "/households/\(householdId)/completions/\(completionId)/reject",
+                method: "POST",
+                body: RejectCompletionBody(rejectionReason: nil)
+            )
+            pendingReviewItems.removeAll { $0.id == completionId }
+        } catch let err as APIError {
+            error = err
+        } catch {
+            self.error = .server(code: "INTERNAL", message: error.localizedDescription)
+        }
+    }
+
+    func completeChore(
+        _ choreId: String,
+        householdId: String,
+        notes: String? = nil,
+        photoData: Data? = nil,
+        photoContentType: String? = nil
+    ) async {
         let tz = TimeZone.current.identifier
-        let body = CompleteChoreBody(notes: notes, tz: tz)
+        let body = CompleteChoreBody(
+            notes: notes,
+            tz: tz,
+            photoBase64: photoData?.base64EncodedString(),
+            photoContentType: photoContentType
+        )
         do {
             let _: CompleteChoreResponse = try await client.send(
                 path: "/households/\(householdId)/chores/\(choreId)/complete",
@@ -200,7 +253,11 @@ final class ChoresViewModel {
                 recurrence: nil,
                 estimatedMinutes: nil,
                 points: nil,
-                archived: archived
+                archived: archived,
+                assignedToUserId: nil,
+                rotationMemberIds: nil,
+                requiresPhotoEvidence: nil,
+                requiresParentApproval: nil
             ),
             householdId: householdId
         )

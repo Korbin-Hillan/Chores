@@ -14,6 +14,31 @@ import { AppError } from "../utils/errors.js";
 
 const MAX_IMAGE_BASE64_BYTES = 4 * 1024 * 1024 * (4 / 3); // ~5.5 MB base64 of a 4 MB image
 
+// Per-household rate limit for OpenAI-backed endpoints. Each household gets 30 generation
+// calls per hour. This stacks on top of the global per-IP limit registered in app.ts.
+const HOUSEHOLD_GENERATION_RATE_LIMIT = {
+  config: {
+    rateLimit: {
+      max: 30,
+      timeWindow: "1 hour",
+      keyGenerator: (req: { params: unknown }): string => {
+        const params = req.params as { householdId?: string };
+        return `gen:${params.householdId ?? "unknown"}`;
+      },
+      errorResponseBuilder: (
+        _req: unknown,
+        ctx: { max: number; ttl: number },
+      ): { error: { code: string; message: string; details: { max: number; resetInMs: number } } } => ({
+        error: {
+          code: "RATE_LIMITED",
+          message: `Your household has hit the generation limit of ${ctx.max} requests per hour. Try again soon.`,
+          details: { max: ctx.max, resetInMs: ctx.ttl },
+        },
+      }),
+    },
+  },
+} as const;
+
 const textGenBody = z.object({
   prompt: z.string().min(1).max(1000),
   roomId: z.string().optional(),
@@ -55,7 +80,7 @@ export async function generationRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", requireAuth);
   app.addHook("preHandler", requireMembership);
 
-  app.post("/text", async (request, reply) => {
+  app.post("/text", HOUSEHOLD_GENERATION_RATE_LIMIT, async (request, reply) => {
     const { householdId } = request.params as { householdId: string };
     const body = textGenBody.safeParse(request.body);
     if (!body.success) throw new AppError(400, "VALIDATION_FAILED", body.error.message);
@@ -69,6 +94,7 @@ export async function generationRoutes(app: FastifyInstance): Promise<void> {
       apiKey,
       body.data.prompt,
       existingRooms.map((r) => r.name),
+      request.log,
     );
 
     const job = await GenerationJob.create({
@@ -87,7 +113,7 @@ export async function generationRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
-  app.post("/image", async (request, reply) => {
+  app.post("/image", HOUSEHOLD_GENERATION_RATE_LIMIT, async (request, reply) => {
     const { householdId } = request.params as { householdId: string };
     const body = imageGenBody.safeParse(request.body);
     if (!body.success) throw new AppError(400, "VALIDATION_FAILED", body.error.message);
@@ -106,6 +132,7 @@ export async function generationRoutes(app: FastifyInstance): Promise<void> {
       body.data.imageBase64,
       body.data.mimeType,
       existingRooms.map((r) => r.name),
+      request.log,
     );
 
     const imageHash = createHash("sha256").update(body.data.imageBase64).digest("hex");

@@ -37,18 +37,21 @@ The MVP is the smallest version of ChoresApp that delivers the full experience: 
 **As a member, I can:**
 - See a list of rooms in my household.
 - Add a new room with a name and an optional SF Symbol icon.
-- Archive a room (it stops appearing but its history is kept).
+- Edit a room's name and icon.
+- **Delete a room.** Deletion is permanent and cascades: every chore in that room and every completion record for those chores is removed. The UI confirms with a destructive dialog naming the room before deleting.
 
 ### 4. Chores — manual
 
 **As a member, I can:**
 - View chores grouped by room.
 - Create a chore in a room with: title, optional description, recurrence (none / daily / weekly on selected weekdays / monthly on day N), optional estimated minutes, optional points (default 1).
-- Edit or archive a chore.
+- Edit a chore.
+- **Delete a chore.** Deletion is permanent and removes the chore plus every completion record for it. There is no archive/restore in v1.
 
 **Acceptance:**
 - Recurring chores show their next due date in the list.
-- Archived chores don't appear in the main list but are visible behind a "Show archived" toggle.
+- The DELETE action requires a destructive confirmation dialog naming the chore.
+- Streak history and the global feed are not affected by deleting a chore the user did not complete; they only lose the rows tied to the deleted chore itself.
 
 ### 5. Chores — AI generation from text
 
@@ -104,6 +107,27 @@ The MVP is the smallest version of ChoresApp that delivers the full experience: 
 - See a weekly leaderboard for my household: total points completed, current streak, member.
 - Default sort is points-this-week descending.
 
+### 10. Multi-household switching
+
+**As a member of more than one household, I can:**
+- Open Profile → "Switch household" and pick which household the rest of the app shows.
+- The selected household persists in Keychain so the app reopens to it.
+
+**Acceptance:**
+- Members with exactly one household never see the picker UI.
+- Switching is instant — every tab re-runs its `.task(id: householdId)` against the new household.
+
+### 11. Biometric session lock (Face ID / Touch ID)
+
+**As any member, I can:**
+- Open Profile → Security and toggle "Require Face ID" (or Touch ID / Optic ID, depending on the device).
+- Once enabled, returning to the app from a fresh launch shows an unlock screen that requires biometrics before chores are visible. The current network session (access + refresh tokens) stays in Keychain throughout — biometrics gate the *UI*, not the API.
+
+**Acceptance:**
+- The toggle is hidden on devices that don't support biometrics (`LAContext.canEvaluatePolicy` is false).
+- Cancelling the biometric prompt leaves the user on the unlock screen with a "Sign out" escape hatch, never silently signs them out.
+- The setting is per-device (stored in `UserDefaults`), not synced.
+
 ## Explicitly out of scope for v1
 
 - Push notifications (APNs)
@@ -111,12 +135,14 @@ The MVP is the smallest version of ChoresApp that delivers the full experience: 
 - Photo evidence on completion
 - Chore assignment to specific users (anyone can complete any chore)
 - Recurring chore auto-rotation between members
+- Reward redemption / allowance integration
 - Calendar export
 - Apple Watch app
 - iPad-optimized layout (it'll work in compatibility mode)
 - Sign in with Apple (deferred to v1.1)
 - Internationalization beyond English
 - Web or Android client
+- Soft delete / archive UI for chores and rooms (the `archived` field exists on the schema for a future "pause" feature, but DELETE is the only destructive user action in v1)
 
 ## Screens (high level)
 
@@ -134,8 +160,12 @@ The MVP is the smallest version of ChoresApp that delivers the full experience: 
 | Chore detail | Title, description, recurrence, complete button, completion history | Push from list |
 | Feed tab | Recent completions, household-wide | |
 | Leaderboard tab | This week | |
-| Profile tab | Streaks, displayName, log out | |
-| Settings | Notification time, household name, members, key (admin) | Push from Profile |
+| Profile tab | Display name, biometric toggle, household switcher entry, household settings entry, sign out | |
+| Household picker | Sheet listing every household the user belongs to; tap to switch | Hidden if user only belongs to one household |
+| Notification settings | Daily reminder toggle + time picker; permission prompt | Push from Profile |
+| Household settings | Household name, members + streaks, invite code (reveal-on-tap), AI key entry | Push from Profile |
+| Family AI key | Status, Set / Replace / Remove (admin only) | Push from Household settings |
+| Session unlock | Face ID / Touch ID prompt with sign-out fallback | Shown on cold launch when biometric lock is on |
 
 ## Definition of MVP done
 

@@ -112,9 +112,6 @@ struct ManageRoomsView: View {
 
     var body: some View {
         List {
-            Section {
-                Toggle("Show archived rooms", isOn: $showArchived)
-            }
 
             Section {
                 ForEach(rooms) { room in

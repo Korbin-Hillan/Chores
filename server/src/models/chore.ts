@@ -23,6 +23,10 @@ const choreSchema = new Schema(
     recurrence: { type: recurrenceSchema, required: true, default: () => ({ kind: "none" }) },
     estimatedMinutes: { type: Number, default: null },
     points: { type: Number, required: true, default: 1 },
+    assignedToUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    rotationMemberIds: { type: [Schema.Types.ObjectId], ref: "User", default: [] },
+    requiresPhotoEvidence: { type: Boolean, required: true, default: false },
+    requiresParentApproval: { type: Boolean, required: true, default: false },
     createdByUserId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     source: {
       type: String,
@@ -46,6 +50,10 @@ export type SafeChore = {
   recurrence: { kind: string; weekdays?: number[]; dayOfMonth?: number };
   estimatedMinutes: number | null;
   points: number;
+  assignedToUserId: string | null;
+  rotationMemberIds: string[];
+  requiresPhotoEvidence: boolean;
+  requiresParentApproval: boolean;
   createdByUserId: string;
   source: string;
   archived: boolean;
@@ -62,6 +70,14 @@ export function toSafeChore(doc: ChoreDoc): SafeChore {
     recurrence: doc.recurrence as SafeChore["recurrence"],
     estimatedMinutes: doc.estimatedMinutes ?? null,
     points: doc.points,
+    assignedToUserId: doc.assignedToUserId
+      ? (doc.assignedToUserId as Types.ObjectId).toHexString()
+      : null,
+    rotationMemberIds: (doc.rotationMemberIds ?? []).map((id) =>
+      (id as Types.ObjectId).toHexString(),
+    ),
+    requiresPhotoEvidence: doc.requiresPhotoEvidence ?? false,
+    requiresParentApproval: doc.requiresParentApproval ?? false,
     createdByUserId: (doc.createdByUserId as Types.ObjectId).toHexString(),
     source: doc.source,
     archived: doc.archived,

@@ -105,6 +105,10 @@ actor APIClient {
         let _: Empty = try await send(path: path, method: method, body: body)
     }
 
+    func data(path: String, query: [URLQueryItem]? = nil) async throws -> Data {
+        try await executeData(path: path, method: "GET", query: query, bodyData: nil)
+    }
+
     // MARK: - Core execution
 
     private func execute<Response: Decodable>(
@@ -126,7 +130,9 @@ actor APIClient {
         }
 
         let (data, response) = try await fetch(request)
-        let http = response as! HTTPURLResponse
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
 
         if http.statusCode == 401 {
             guard let refresher = tokenRefresher else {
@@ -138,7 +144,9 @@ actor APIClient {
             request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
 
             let (retryData, retryResponse) = try await fetch(request)
-            let retryHTTP = retryResponse as! HTTPURLResponse
+            guard let retryHTTP = retryResponse as? HTTPURLResponse else {
+                throw APIError.invalidResponse
+            }
             if retryHTTP.statusCode == 401 {
                 await onUnauthorized?()
                 throw APIError.unauthorized
@@ -147,6 +155,54 @@ actor APIClient {
         }
 
         return try decode(data, statusCode: http.statusCode)
+    }
+
+    private func executeData(
+        path: String,
+        method: String,
+        query: [URLQueryItem]?,
+        bodyData: Data?
+    ) async throws -> Data {
+        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        components.queryItems = query
+
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = bodyData
+
+        if let token = accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await fetch(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        if http.statusCode == 401 {
+            guard let refresher = tokenRefresher else {
+                await onUnauthorized?()
+                throw APIError.unauthorized
+            }
+            let newToken = try await refresher()
+            accessToken = newToken
+            request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+
+            let (retryData, retryResponse) = try await fetch(request)
+            guard let retryHTTP = retryResponse as? HTTPURLResponse else {
+                throw APIError.invalidResponse
+            }
+            if retryHTTP.statusCode == 401 {
+                await onUnauthorized?()
+                throw APIError.unauthorized
+            }
+            try validateDataResponse(retryData, statusCode: retryHTTP.statusCode)
+            return retryData
+        }
+
+        try validateDataResponse(data, statusCode: http.statusCode)
+        return data
     }
 
     private func fetch(_ request: URLRequest) async throws -> (Data, URLResponse) {
@@ -176,6 +232,16 @@ actor APIClient {
         } catch {
             logger.error("Decoding error for \(T.self): \(error)")
             throw APIError.decoding(error)
+        }
+    }
+
+    private func validateDataResponse(_ data: Data, statusCode: Int) throws {
+        if statusCode == 429 { throw APIError.rateLimited }
+        if statusCode >= 400 {
+            if let err = try? decoder.decode(ServerError.self, from: data) {
+                throw APIError.server(code: err.error.code, message: err.error.message)
+            }
+            throw APIError.invalidResponse
         }
     }
 }

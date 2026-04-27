@@ -11,6 +11,7 @@ struct ChoreListView: View {
     @State private var showGenerate = false
     @State private var showArchived = false
     @State private var selectedChore: APIChore?
+    @State private var completionChore: APIChore?
     @State private var preferredRoomIdForNewChore: String?
 
     var householdId: String { authStore.currentHouseholdId ?? "" }
@@ -24,6 +25,12 @@ struct ChoreListView: View {
         return viewModel.allRooms(includeArchived: true).filter { room in
             !room.archived || room.id == selectedRoomId
         }
+    }
+
+    private var canReviewCompletions: Bool {
+        guard let currentUserId = authStore.currentUser?.id else { return false }
+        let role = viewModel.householdMembers.first(where: { $0.userId == currentUserId })?.role
+        return role == "admin" || role == "parent"
     }
 
     var body: some View {
@@ -49,9 +56,6 @@ struct ChoreListView: View {
             .navigationTitle("Chores")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Menu("View", systemImage: "line.3.horizontal.decrease.circle") {
-                        Toggle("Show archived rooms", isOn: $showArchived)
-                    }
                     Button("Generate", systemImage: "sparkles") { showGenerate = true }
                     Menu("Add", systemImage: "plus") {
                         Button("Add chore", systemImage: "checkmark.circle") {
@@ -73,6 +77,7 @@ struct ChoreListView: View {
                     viewModel: viewModel,
                     householdId: householdId,
                     rooms: choreEditorRooms,
+                    members: viewModel.householdMembers,
                     chore: nil,
                     preferredRoomId: preferredRoomIdForNewChore
                 )
@@ -82,12 +87,20 @@ struct ChoreListView: View {
                     viewModel: viewModel,
                     householdId: householdId,
                     rooms: choreEditorRooms,
+                    members: viewModel.householdMembers,
                     chore: chore,
                     preferredRoomId: nil
                 )
             }
             .sheet(isPresented: $showGenerate) {
                 GenerateSheet(householdId: householdId, viewModel: viewModel)
+            }
+            .sheet(item: $completionChore) { chore in
+                CompleteChoreSheet(
+                    chore: chore,
+                    householdId: householdId,
+                    viewModel: viewModel
+                )
             }
             .sheet(isPresented: $showManageRooms) {
                 NavigationStack {
@@ -97,14 +110,17 @@ struct ChoreListView: View {
             .errorAlert($viewModel.error)
         }
         .task(id: householdId) { await viewModel.load(householdId: householdId, context: modelContext) }
+        .task(id: canReviewCompletions) {
+            if canReviewCompletions {
+                await viewModel.loadPendingReviews(householdId: householdId)
+            }
+        }
     }
 
     private var choreList: some View {
         List {
-            Section {
-                Toggle("Show archived rooms", isOn: $showArchived)
-            }
-
+            pendingReviewSection
+            rotatingChoresSection
             ForEach(Array(visibleRooms.enumerated()), id: \.element.id) { _, room in
                 let chores = viewModel.chores(for: room.id)
                 Section {
@@ -128,7 +144,11 @@ struct ChoreListView: View {
                             NavigationLink {
                                 ChoreDetailView(chore: chore, viewModel: viewModel, householdId: householdId)
                             } label: {
-                                ChoreRow(chore: chore, schedule: schedule)
+                                ChoreRow(
+                                    chore: chore,
+                                    schedule: schedule,
+                                    assigneeName: displayName(for: chore.assignedToUserId)
+                                )
                             }
                             .swipeActions(edge: .leading, allowsFullSwipe: false) {
                                 Button("Edit", systemImage: "pencil") {
@@ -141,7 +161,7 @@ struct ChoreListView: View {
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button("Complete", systemImage: "checkmark") {
-                                    Task { await viewModel.completeChore(chore.id, householdId: householdId) }
+                                    completionChore = chore
                                 }
                                 .tint(.green)
                             }
@@ -162,7 +182,10 @@ struct ChoreListView: View {
                                 showAddChore = true
                             } label: {
                                 Image(systemName: "plus.circle.fill")
+                                    .font(.title2)
                                     .foregroundStyle(Color.accentColor)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Add chore to \(room.name)")
@@ -173,17 +196,78 @@ struct ChoreListView: View {
         }
         .listStyle(.insetGrouped)
     }
+
+    @ViewBuilder
+    private var pendingReviewSection: some View {
+        if canReviewCompletions && !viewModel.pendingReviewItems.isEmpty {
+            Section("Pending review") {
+                ForEach(viewModel.pendingReviewItems) { item in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("\(item.completedBy.displayName) finished \(item.chore?.title ?? "a chore")")
+                            .font(.subheadline.weight(.semibold))
+                        if item.hasPhoto {
+                            CompletionPhotoView(householdId: householdId, completionId: item.id)
+                                .frame(height: 120)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        HStack {
+                            Button("Approve", systemImage: "checkmark.circle.fill") {
+                                Task { await viewModel.approveCompletion(item.id, householdId: householdId) }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            Button("Reject", systemImage: "xmark.circle") {
+                                Task { await viewModel.rejectCompletion(item.id, householdId: householdId) }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var rotatingChoresSection: some View {
+        let rotatingChores = viewModel.choresByRoom.values
+            .flatMap { $0 }
+            .filter { !$0.rotationMemberIds.isEmpty && !$0.archived }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        if !rotatingChores.isEmpty {
+            Section("Whose week is it?") {
+                ForEach(rotatingChores) { chore in
+                    HStack {
+                        Label(chore.title, systemImage: "arrow.triangle.2.circlepath")
+                        Spacer()
+                        Text(displayName(for: chore.assignedToUserId) ?? "Anyone")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func displayName(for userId: String?) -> String? {
+        guard let userId else { return nil }
+        return viewModel.householdMembers.first(where: { $0.userId == userId })?.displayName
+    }
 }
 
 struct ChoreRow: View {
     let chore: APIChore
     let schedule: ChoreScheduleSnapshot
+    let assigneeName: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(chore.title)
                     .font(.body)
+                Spacer()
+                if let assigneeName {
+                    AssignmentBadge(name: assigneeName, isRotation: !chore.rotationMemberIds.isEmpty)
+                }
             }
             HStack(spacing: 8) {
                 if chore.recurrence.kind != .none {
@@ -200,6 +284,16 @@ struct ChoreRow: View {
                     Label("AI", systemImage: "sparkles")
                         .font(.caption)
                         .foregroundStyle(.purple)
+                }
+                if chore.requiresPhotoEvidence {
+                    Label("Photo", systemImage: "camera")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if chore.requiresParentApproval {
+                    Label("Review", systemImage: "checkmark.seal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             if let dueText = dueText {
@@ -235,6 +329,23 @@ struct ChoreRow: View {
         case .unscheduled:
             return .secondary
         }
+    }
+}
+
+private struct AssignmentBadge: View {
+    let name: String
+    let isRotation: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(isRotation ? "🔄" : "👤")
+            Text(name)
+                .lineLimit(1)
+        }
+        .font(.caption.weight(.semibold))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.thinMaterial, in: Capsule())
     }
 }
 

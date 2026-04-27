@@ -35,9 +35,9 @@ targets:
           - UIInterfaceOrientationPortrait
         UIApplicationSupportsIndirectInputEvents: true
         ITSAppUsesNonExemptEncryption: false
-        NSCameraUsageDescription: "Used to capture photos of rooms so the AI can suggest tailored chores."
+        NSCameraUsageDescription: "Used to capture room photos for AI suggestions and chore completion evidence."
         NSFaceIDUsageDescription: "Used to unlock your saved Chores session with Face ID."
-        NSPhotoLibraryUsageDescription: "Used to pick room photos so the AI can suggest tailored chores."
+        NSPhotoLibraryUsageDescription: "Used to pick room photos for AI suggestions and chore completion evidence."
         ApiBaseURL: $(API_BASE_URL)
     settings:
       base:

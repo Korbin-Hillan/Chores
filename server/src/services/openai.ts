@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { FastifyBaseLogger } from "fastify";
 import type { ChoreDraft } from "../models/generationJob.js";
 import { AppError } from "../utils/errors.js";
 
@@ -112,8 +113,8 @@ function normalizeChoreDraft(raw: RawChoreDraft): ChoreDraft {
   };
 }
 
-function toOpenAIAppError(operation: string, err: unknown): AppError {
-  console.error(`[OpenAI] ${operation} failed`, err);
+function toOpenAIAppError(operation: string, err: unknown, logger: FastifyBaseLogger): AppError {
+  logger.error({ err, operation }, "OpenAI request failed");
 
   if (err instanceof OpenAI.AuthenticationError) {
     return new AppError(502, "OPENAI_FAILED", "OpenAI rejected this API key.");
@@ -151,6 +152,7 @@ export async function generateChoresFromText(
   apiKey: string,
   prompt: string,
   existingRoomNames: string[],
+  logger: FastifyBaseLogger,
 ): Promise<{ chores: ChoreDraft[]; model: string; tokenUsage: { prompt: number; completion: number } }> {
   const client = createOpenAIClient(apiKey);
   const model = TEXT_MODEL;
@@ -167,7 +169,7 @@ export async function generateChoresFromText(
       max_tokens: 2000,
     });
   } catch (err) {
-    throw toOpenAIAppError("Text generation", err);
+    throw toOpenAIAppError("Text generation", err, logger);
   }
 
   const content = response.choices[0]?.message.content;
@@ -177,7 +179,7 @@ export async function generateChoresFromText(
   try {
     parsed = JSON.parse(content) as { chores: RawChoreDraft[] };
   } catch (err) {
-    console.error("[OpenAI] Text generation returned invalid JSON", { content, err });
+    logger.error({ err, content }, "OpenAI text generation returned invalid JSON");
     throw new AppError(502, "OPENAI_FAILED", "OpenAI returned malformed JSON.");
   }
   return {
@@ -195,6 +197,7 @@ export async function generateChoresFromImage(
   imageBase64: string,
   mimeType: "image/jpeg" | "image/png" | "image/webp",
   existingRoomNames: string[],
+  logger: FastifyBaseLogger,
 ): Promise<{ chores: ChoreDraft[]; model: string; tokenUsage: { prompt: number; completion: number } }> {
   const client = createOpenAIClient(apiKey);
   const model = IMAGE_MODEL;
@@ -223,7 +226,7 @@ export async function generateChoresFromImage(
       max_tokens: 2000,
     });
   } catch (err) {
-    throw toOpenAIAppError("Image generation", err);
+    throw toOpenAIAppError("Image generation", err, logger);
   }
 
   const content = response.choices[0]?.message.content;
@@ -233,7 +236,7 @@ export async function generateChoresFromImage(
   try {
     parsed = JSON.parse(content) as { chores: RawChoreDraft[] };
   } catch (err) {
-    console.error("[OpenAI] Image generation returned invalid JSON", { content, err });
+    logger.error({ err, contentPreview: content.slice(0, 200) }, "OpenAI image generation returned invalid JSON");
     throw new AppError(502, "OPENAI_FAILED", "OpenAI returned malformed JSON.");
   }
   return {

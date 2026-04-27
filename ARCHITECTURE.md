@@ -60,7 +60,7 @@ Compound unique index on `{ householdId, userId }`.
 | `householdId` | ObjectId → households, indexed | |
 | `name` | string | "Kitchen", "Living Room" |
 | `icon` | string \| null | SF Symbol name |
-| `archived` | boolean, default false | soft-delete |
+| `archived` | boolean, default false | reserved for a future "pause" feature; the user-facing destructive action is hard `DELETE` |
 
 ### `chores`
 | Field | Type | Notes |
@@ -132,9 +132,10 @@ Access token TTL: 15 min. Refresh token TTL: 30 days, single-use (rotated on eve
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| GET | `/households/:id/rooms` | — | `Room[]` |
+| GET | `/households/:id/rooms` | query: `?includeArchived=` | `Room[]` |
 | POST | `/households/:id/rooms` | `{ name, icon? }` | `Room` |
 | PUT | `/households/:id/rooms/:roomId` | `{ name?, icon?, archived? }` | `Room` |
+| DELETE | `/households/:id/rooms/:roomId` | — | `204` — **permanent**: cascades into all chores in the room and their completion history |
 
 ### Chores
 
@@ -142,9 +143,12 @@ Access token TTL: 15 min. Refresh token TTL: 30 days, single-use (rotated on eve
 |---|---|---|---|
 | GET | `/households/:id/chores` | query: `?roomId=&includeArchived=` | `Chore[]` |
 | POST | `/households/:id/chores` | `{ roomId, title, description?, recurrence, estimatedMinutes?, points? }` | `Chore` |
-| PUT | `/households/:id/chores/:choreId` | partial chore | `Chore` |
-| DELETE | `/households/:id/chores/:choreId` | — | `204` (soft delete via `archived: true`) |
-| POST | `/households/:id/chores/:choreId/complete` | `{ notes? }` | `{ completion, membership }` (returns updated streak) |
+| PUT | `/households/:id/chores/:choreId` | partial chore (including `archived?`) | `Chore` |
+| DELETE | `/households/:id/chores/:choreId` | — | `204` — **permanent**: removes the chore and every completion record for it |
+| POST | `/households/:id/chores/:choreId/complete` | `{ notes?, tz }` | `{ completion, membership }` (returns updated streak) |
+| GET | `/households/:id/chores/:choreId/completions` | query: `?limit=` | `Completion[]` (most recent first, with `completedBy` populated) |
+
+**Delete vs. archive:** `archived: true` is supported via `PUT` for a future "pause" feature, but the user-facing destructive action is `DELETE`, which is permanent and cascades. There is no soft-delete in v1.
 
 ### Generation
 

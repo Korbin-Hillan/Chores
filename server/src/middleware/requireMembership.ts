@@ -36,3 +36,13 @@ export async function requireAdmin(
     throw new AppError(403, "FORBIDDEN", "Only the household admin can perform this action");
   }
 }
+
+export async function requireParentOrAdmin(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  await requireMembership(request, reply);
+  if (request.membership.role !== "admin" && request.membership.role !== "parent") {
+    throw new AppError(403, "FORBIDDEN", "Only a parent can perform this action");
+  }
+}

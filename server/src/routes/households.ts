@@ -13,6 +13,7 @@ import { AppError } from "../utils/errors.js";
 const createBody = z.object({ name: z.string().min(1).max(80).trim() });
 const joinBody = z.object({ inviteCode: z.string().min(1) });
 const openAIKeyBody = z.object({ key: z.string().min(1) });
+const memberRoleBody = z.object({ role: z.enum(["parent", "member"]) });
 
 export async function householdRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", requireAuth);
@@ -79,6 +80,22 @@ export async function householdRoutes(app: FastifyInstance): Promise<void> {
     }));
 
     return { household: toSafeHousehold(household), members };
+  });
+
+  app.put("/:id/members/:userId/role", { preHandler: [requireAdmin] }, async (request, reply) => {
+    const { id, userId } = request.params as { id: string; userId: string };
+    const body = memberRoleBody.safeParse(request.body);
+    if (!body.success) throw new AppError(400, "VALIDATION_FAILED", body.error.message);
+
+    const membership = await HouseholdMember.findOne({ householdId: id, userId });
+    if (!membership) throw new AppError(404, "NOT_FOUND", "Member not found");
+    if (membership.role === "admin") {
+      throw new AppError(400, "VALIDATION_FAILED", "The household admin role cannot be changed");
+    }
+
+    membership.role = body.data.role;
+    await membership.save();
+    return reply.send(toSafeMember(membership));
   });
 
   app.post("/join", async (request, reply) => {

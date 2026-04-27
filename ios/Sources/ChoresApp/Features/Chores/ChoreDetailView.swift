@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UIKit
 
 @Observable
 @MainActor
@@ -29,9 +31,7 @@ struct ChoreDetailView: View {
     let householdId: String
 
     @State private var showComplete = false
-    @State private var isCompleting = false
     @State private var historyViewModel = ChoreCompletionHistoryViewModel()
-    @Environment(\.dismiss) private var dismiss
 
     private var schedule: ChoreScheduleSnapshot {
         chore.scheduleSnapshot()
@@ -89,6 +89,16 @@ struct ChoreDetailView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            if item.reviewStatus == "pending" {
+                                Label("Pending review", systemImage: "hourglass")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            if item.hasPhoto {
+                                CompletionPhotoView(householdId: householdId, completionId: item.id)
+                                    .frame(width: 84, height: 84)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
                         }
                         .padding(.vertical, 2)
                     }
@@ -97,21 +107,11 @@ struct ChoreDetailView: View {
         }
         .navigationTitle(chore.title)
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Complete chore", isPresented: $showComplete, titleVisibility: .visible) {
-            Button("Complete") {
-                Task {
-                    isCompleting = true
-                    await viewModel.completeChore(chore.id, householdId: householdId)
-                    await historyViewModel.load(householdId: householdId, choreId: chore.id)
-                    isCompleting = false
-                    dismiss()
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Mark \"\(chore.title)\" as done?")
+        .sheet(isPresented: $showComplete, onDismiss: {
+            Task { await historyViewModel.load(householdId: householdId, choreId: chore.id) }
+        }) {
+            CompleteChoreSheet(chore: chore, householdId: householdId, viewModel: viewModel)
         }
-        .loadingOverlay(isCompleting)
         .errorAlert($historyViewModel.error)
         .task(id: chore.id) { await historyViewModel.load(householdId: householdId, choreId: chore.id) }
     }
@@ -150,5 +150,200 @@ struct ChoreDetailView: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = includeTime ? .short : .none
         return formatter.string(from: date)
+    }
+}
+
+struct CompletionPhotoView: View {
+    let householdId: String
+    let completionId: String
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Rectangle()
+                    .fill(.quaternary)
+                    .overlay {
+                        Image(systemName: "photo")
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+        .task(id: completionId) { await load() }
+    }
+
+    private func load() async {
+        guard let data = try? await APIClient.shared.data(
+            path: "/households/\(householdId)/completions/\(completionId)/photo"
+        ) else { return }
+        image = UIImage(data: data)
+    }
+}
+
+struct CompleteChoreSheet: View {
+    let chore: APIChore
+    let householdId: String
+    let viewModel: ChoresViewModel
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var notes = ""
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var photoData: Data?
+    @State private var showCamera = false
+    @State private var isCompleting = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Completion") {
+                    TextField("Notes (optional)", text: $notes, axis: .vertical)
+                        .lineLimit(2...4)
+                    HStack {
+                        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                            Button {
+                                showCamera = true
+                            } label: {
+                                Label("Camera", systemImage: "camera")
+                            }
+                        }
+                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                            Label("Library", systemImage: "photo")
+                        }
+                    }
+                    if let photoData, let image = UIImage(data: photoData) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(height: 160)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    if chore.requiresPhotoEvidence {
+                        Label("Photo required", systemImage: "checkmark.seal")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if chore.requiresParentApproval {
+                        Label("Completion will be pending parent review", systemImage: "hourglass")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle(chore.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Complete") { complete() }
+                        .disabled(isCompleting || (chore.requiresPhotoEvidence && photoData == nil))
+                }
+            }
+            .loadingOverlay(isCompleting)
+            .onChange(of: selectedPhoto) { _, newValue in
+                Task { await loadPhoto(newValue) }
+            }
+            .sheet(isPresented: $showCamera) {
+                CameraCaptureView { image in
+                    photoData = downscaledJPEG(from: image)
+                }
+            }
+        }
+    }
+
+    private func complete() {
+        isCompleting = true
+        Task {
+            defer { isCompleting = false }
+            await viewModel.completeChore(
+                chore.id,
+                householdId: householdId,
+                notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes,
+                photoData: photoData,
+                photoContentType: photoData == nil ? nil : "image/jpeg"
+            )
+            dismiss()
+        }
+    }
+
+    private func loadPhoto(_ item: PhotosPickerItem?) async {
+        guard let item, let data = try? await item.loadTransferable(type: Data.self) else { return }
+        photoData = downscaledJPEG(from: data)
+    }
+
+    private func downscaledJPEG(from data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let maxSide: CGFloat = 800
+        let scale = min(1, maxSide / max(image.size.width, image.size.height))
+        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let resized = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        return resized.jpegData(compressionQuality: 0.7)
+    }
+
+    private func downscaledJPEG(from image: UIImage) -> Data? {
+        let maxSide: CGFloat = 800
+        let scale = min(1, maxSide / max(image.size.width, image.size.height))
+        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let resized = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        return resized.jpegData(compressionQuality: 0.7)
+    }
+}
+
+private struct CameraCaptureView: UIViewControllerRepresentable {
+    let onImage: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {
+        _ = uiViewController
+        _ = context
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onImage: onImage, dismiss: dismiss)
+    }
+
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let onImage: (UIImage) -> Void
+        let dismiss: DismissAction
+
+        init(onImage: @escaping (UIImage) -> Void, dismiss: DismissAction) {
+            self.onImage = onImage
+            self.dismiss = dismiss
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            if let image = info[.originalImage] as? UIImage {
+                onImage(image)
+            }
+            dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            dismiss()
+        }
     }
 }

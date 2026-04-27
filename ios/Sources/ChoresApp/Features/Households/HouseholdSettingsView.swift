@@ -44,11 +44,22 @@ struct HouseholdSettingsView: View {
                                         Label("Admin", systemImage: "star.fill")
                                             .font(.caption)
                                             .foregroundStyle(.orange)
+                                    } else if member.role == "parent" {
+                                        Label("Parent", systemImage: "checkmark.seal.fill")
+                                            .font(.caption)
+                                            .foregroundStyle(.blue)
                                     }
                                 }
                                 .font(.caption)
                             }
                             Spacer()
+                            if isAdmin && member.role != "admin" {
+                                Picker("Role", selection: roleBinding(for: member)) {
+                                    Text("Parent").tag("parent")
+                                    Text("Member").tag("member")
+                                }
+                                .pickerStyle(.menu)
+                            }
                             VStack(alignment: .trailing, spacing: 2) {
                                 Label("\(member.currentStreak)", systemImage: "flame.fill")
                                     .foregroundStyle(.orange)
@@ -86,6 +97,27 @@ struct HouseholdSettingsView: View {
             detail = try await APIClient.shared.send(
                 path: "/households/\(householdId)"
             )
+        } catch let err as APIError {
+            error = err
+        } catch {}
+    }
+
+    private func roleBinding(for member: APIHouseholdMember) -> Binding<String> {
+        Binding {
+            member.role
+        } set: { newRole in
+            Task { await updateRole(userId: member.userId, role: newRole) }
+        }
+    }
+
+    private func updateRole(userId: String, role: String) async {
+        do {
+            let _: APIHouseholdMember = try await APIClient.shared.send(
+                path: "/households/\(householdId)/members/\(userId)/role",
+                method: "PUT",
+                body: UpdateMemberRoleBody(role: role)
+            )
+            await loadDetail()
         } catch let err as APIError {
             error = err
         } catch {}

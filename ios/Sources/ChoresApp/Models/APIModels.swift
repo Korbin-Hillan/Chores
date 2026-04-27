@@ -80,6 +80,10 @@ struct APIChore: Decodable, Identifiable {
     let recurrence: Recurrence
     let estimatedMinutes: Int?
     let points: Int
+    let assignedToUserId: String?
+    let rotationMemberIds: [String]
+    let requiresPhotoEvidence: Bool
+    let requiresParentApproval: Bool
     let createdByUserId: String
     let source: String
     let archived: Bool
@@ -94,6 +98,12 @@ struct APICompletion: Decodable, Identifiable {
     let completedByUserId: String
     let completedAt: String
     let notes: String?
+    let assignedToUserIdAtCompletion: String?
+    let reviewStatus: String
+    let reviewedByUserId: String?
+    let reviewedAt: String?
+    let rejectionReason: String?
+    let hasPhoto: Bool
 }
 
 struct CompleteChoreResponse: Decodable {
@@ -109,6 +119,10 @@ struct FeedItem: Decodable, Identifiable {
     let notes: String?
     let chore: APIChore?
     let completedBy: FeedUser
+    let assignedToUserIdAtCompletion: String?
+    let assignedToAtCompletion: FeedUser?
+    let reviewStatus: String
+    let hasPhoto: Bool
 }
 
 struct FeedUser: Decodable {
@@ -121,6 +135,9 @@ struct ChoreCompletionHistoryItem: Decodable, Identifiable {
     let completedAt: String
     let notes: String?
     let completedBy: FeedUser
+    let assignedToUserIdAtCompletion: String?
+    let reviewStatus: String
+    let hasPhoto: Bool
 }
 
 // MARK: - Leaderboard
@@ -189,6 +206,10 @@ struct CreateChoreBody: Encodable {
     let recurrence: Recurrence
     let estimatedMinutes: Int?
     let points: Int
+    let assignedToUserId: String?
+    let rotationMemberIds: [String]
+    let requiresPhotoEvidence: Bool
+    let requiresParentApproval: Bool
 }
 
 struct UpdateChoreBody: Encodable {
@@ -199,11 +220,25 @@ struct UpdateChoreBody: Encodable {
     let estimatedMinutes: Int?
     let points: Int?
     let archived: Bool?
+    let assignedToUserId: String?
+    let rotationMemberIds: [String]?
+    let requiresPhotoEvidence: Bool?
+    let requiresParentApproval: Bool?
 }
 
 struct CompleteChoreBody: Encodable {
     let notes: String?
     let tz: String
+    let photoBase64: String?
+    let photoContentType: String?
+}
+
+struct RejectCompletionBody: Encodable {
+    let rejectionReason: String?
+}
+
+struct UpdateMemberRoleBody: Encodable {
+    let role: String
 }
 
 struct TextGenerationBody: Encodable {

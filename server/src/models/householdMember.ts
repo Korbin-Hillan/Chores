@@ -4,7 +4,7 @@ const householdMemberSchema = new Schema(
   {
     householdId: { type: Schema.Types.ObjectId, ref: "Household", required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    role: { type: String, enum: ["admin", "member"], required: true, default: "member" },
+    role: { type: String, enum: ["admin", "parent", "member"], required: true, default: "member" },
     currentStreak: { type: Number, required: true, default: 0 },
     longestStreak: { type: Number, required: true, default: 0 },
     lastCompletionAt: { type: Date, default: null },
@@ -20,7 +20,7 @@ export type SafeMember = {
   id: string;
   householdId: string;
   userId: string;
-  role: "admin" | "member";
+  role: "admin" | "parent" | "member";
   currentStreak: number;
   longestStreak: number;
   lastCompletionAt: string | null;
@@ -31,7 +31,7 @@ export function toSafeMember(doc: HouseholdMemberDoc): SafeMember {
     id: (doc._id as Types.ObjectId).toHexString(),
     householdId: (doc.householdId as Types.ObjectId).toHexString(),
     userId: (doc.userId as Types.ObjectId).toHexString(),
-    role: doc.role as "admin" | "member",
+    role: doc.role as "admin" | "parent" | "member",
     currentStreak: doc.currentStreak,
     longestStreak: doc.longestStreak,
     lastCompletionAt: doc.lastCompletionAt ? doc.lastCompletionAt.toISOString() : null,

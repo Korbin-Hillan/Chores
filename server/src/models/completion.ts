@@ -12,6 +12,20 @@ const completionSchema = new Schema(
     },
     completedAt: { type: Date, required: true, default: () => new Date(), index: true },
     notes: { type: String, default: null },
+    assignedToUserIdAtCompletion: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    reviewStatus: {
+      type: String,
+      enum: ["approved", "pending", "rejected"],
+      required: true,
+      default: "approved",
+      index: true,
+    },
+    reviewedByUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    reviewedAt: { type: Date, default: null },
+    rejectionReason: { type: String, default: null },
+    photo: { type: Buffer, default: null, select: false },
+    photoContentType: { type: String, default: null },
+    photoExpiresAt: { type: Date, default: null, index: true },
   },
   { versionKey: false },
 );
@@ -25,6 +39,12 @@ export type SafeCompletion = {
   completedByUserId: string;
   completedAt: string;
   notes: string | null;
+  assignedToUserIdAtCompletion: string | null;
+  reviewStatus: "approved" | "pending" | "rejected";
+  reviewedByUserId: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+  hasPhoto: boolean;
 };
 
 export function toSafeCompletion(doc: CompletionDoc): SafeCompletion {
@@ -35,6 +55,16 @@ export function toSafeCompletion(doc: CompletionDoc): SafeCompletion {
     completedByUserId: (doc.completedByUserId as Types.ObjectId).toHexString(),
     completedAt: doc.completedAt.toISOString(),
     notes: doc.notes ?? null,
+    assignedToUserIdAtCompletion: doc.assignedToUserIdAtCompletion
+      ? (doc.assignedToUserIdAtCompletion as Types.ObjectId).toHexString()
+      : null,
+    reviewStatus: (doc.reviewStatus ?? "approved") as "approved" | "pending" | "rejected",
+    reviewedByUserId: doc.reviewedByUserId
+      ? (doc.reviewedByUserId as Types.ObjectId).toHexString()
+      : null,
+    reviewedAt: doc.reviewedAt ? doc.reviewedAt.toISOString() : null,
+    rejectionReason: doc.rejectionReason ?? null,
+    hasPhoto: Boolean(doc.photoContentType && doc.photoExpiresAt && doc.photoExpiresAt > new Date()),
   };
 }
 

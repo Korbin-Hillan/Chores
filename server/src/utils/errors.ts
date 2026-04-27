@@ -6,6 +6,8 @@ export type ErrorCode =
   | "RATE_LIMITED"
   | "OPENAI_KEY_MISSING"
   | "OPENAI_FAILED"
+  | "PHOTO_REQUIRED"
+  | "PHOTO_TOO_LARGE"
   | "INTERNAL";
 
 export class AppError extends Error {

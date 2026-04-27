@@ -25,11 +25,11 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Used to capture photos of rooms so the AI can suggest tailored chores.</string>
+	<string>Used to capture room photos for AI suggestions and chore completion evidence.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Used to unlock your saved Chores session with Face ID.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Used to pick room photos so the AI can suggest tailored chores.</string>
+	<string>Used to pick room photos for AI suggestions and chore completion evidence.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchScreen</key>

@@ -130,9 +130,17 @@ To prevent bloat, the following are explicitly out of v1:
 - Push notifications (APNs) — local notifications only
 - Real-time sync (websockets/SSE) — polling on app foreground + pull-to-refresh
 - Photo evidence on completion
+- Chore assignment to specific users / auto-rotation between members
+- Reward redemption / allowance integration
+- Soft delete / restore for chores and rooms (the user-facing destructive action is hard `DELETE` with a confirmation dialog)
 - Calendar integration
 - Web client
 - Android
-- Gamification beyond per-user streak counts
+- Gamification beyond per-user streak counts and the weekly leaderboard
 
 These are tracked for v2 in `BUILD_PLAN.md` but should not creep into v1 PRs.
+
+**Already shipped beyond the original v1 scope** (don't re-add these as new work):
+- Multi-household switching via Profile → Switch household
+- Biometric session lock (Face ID / Touch ID / Optic ID), opt-in per device, gates the UI not the API session
+- Per-household rate limit on `/generate/*` (30 req/hr/household, in addition to the global per-IP limit)
