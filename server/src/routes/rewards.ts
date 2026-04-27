@@ -122,9 +122,15 @@ export async function rewardRoutes(app: FastifyInstance): Promise<void> {
     const redemptions = await RewardRedemption.find(filter)
       .sort({ createdAt: -1 })
       .limit(100)
-      .populate<{ requestedByUserId: { _id: Types.ObjectId; displayName: string } }>(
+      .populate<{
+        requestedByUserId: {
+          _id: Types.ObjectId;
+          displayName: string;
+          avatarContentType?: string | null;
+        };
+      }>(
         "requestedByUserId",
-        "displayName",
+        "displayName avatarContentType",
       );
 
     return redemptions.map((redemption) => ({
@@ -273,11 +279,19 @@ async function getPointBalance(
 
 function userSummaryFromPopulated(
   value: unknown,
-): { id: string; displayName: string } | null {
+): { id: string; displayName: string; hasAvatar: boolean } | null {
   if (!value || value instanceof Types.ObjectId) return null;
-  const user = value as { _id?: Types.ObjectId; displayName?: string };
+  const user = value as {
+    _id?: Types.ObjectId;
+    displayName?: string;
+    avatarContentType?: string | null;
+  };
   if (!user._id || !user.displayName) return null;
-  return { id: user._id.toString(), displayName: user.displayName };
+  return {
+    id: user._id.toString(),
+    displayName: user.displayName,
+    hasAvatar: Boolean(user.avatarContentType),
+  };
 }
 
 function populatedOrObjectIdToString(value: unknown): string {

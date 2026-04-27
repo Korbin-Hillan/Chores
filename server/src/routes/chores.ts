@@ -203,13 +203,13 @@ export async function choreRoutes(app: FastifyInstance): Promise<void> {
     const completions = await Completion.find({ householdId, choreId })
       .sort({ completedAt: -1 })
       .limit(limitNum)
-      .populate<{ completedByUserId: { _id: Types.ObjectId; displayName: string } }>(
+      .populate<{ completedByUserId: UserSummaryDoc }>(
         "completedByUserId",
-        "displayName",
+        "displayName avatarContentType",
       )
-      .populate<{ assignedToUserIdAtCompletion: { _id: Types.ObjectId; displayName: string } }>(
+      .populate<{ assignedToUserIdAtCompletion: UserSummaryDoc }>(
         "assignedToUserIdAtCompletion",
-        "displayName",
+        "displayName avatarContentType",
       );
 
     return completions.map((completion) => ({
@@ -226,6 +226,7 @@ export async function choreRoutes(app: FastifyInstance): Promise<void> {
       completedBy: {
         id: completion.completedByUserId._id.toString(),
         displayName: completion.completedByUserId.displayName,
+        hasAvatar: Boolean(completion.completedByUserId.avatarContentType),
       },
     }));
   });
@@ -246,13 +247,13 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       .sort({ completedAt: -1 })
       .limit(limitNum)
       .populate<{ choreId: Parameters<typeof toSafeChore>[0] }>("choreId")
-      .populate<{ completedByUserId: { _id: Types.ObjectId; displayName: string } }>(
+      .populate<{ completedByUserId: UserSummaryDoc }>(
         "completedByUserId",
-        "displayName",
+        "displayName avatarContentType",
       )
-      .populate<{ assignedToUserIdAtCompletion: { _id: Types.ObjectId; displayName: string } }>(
+      .populate<{ assignedToUserIdAtCompletion: UserSummaryDoc }>(
         "assignedToUserIdAtCompletion",
-        "displayName",
+        "displayName avatarContentType",
       );
 
     return completions.map((c) => ({
@@ -267,6 +268,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       completedBy: {
         id: c.completedByUserId._id.toString(),
         displayName: c.completedByUserId.displayName,
+        hasAvatar: Boolean(c.completedByUserId.avatarContentType),
       },
     }));
   });
@@ -304,9 +306,9 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       .sort({ completedAt: -1 })
       .limit(50)
       .populate<{ choreId: Parameters<typeof toSafeChore>[0] }>("choreId")
-      .populate<{ completedByUserId: { _id: Types.ObjectId; displayName: string } }>(
+      .populate<{ completedByUserId: UserSummaryDoc }>(
         "completedByUserId",
-        "displayName",
+        "displayName avatarContentType",
       );
 
     return completions.map((c) => ({
@@ -320,6 +322,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       completedBy: {
         id: c.completedByUserId._id.toString(),
         displayName: c.completedByUserId.displayName,
+        hasAvatar: Boolean(c.completedByUserId.avatarContentType),
       },
     }));
   });
@@ -400,7 +403,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
     const memberIds = aggregated.map((a) => a._id);
     const [memberships, users] = await Promise.all([
       HouseholdMember.find({ householdId, userId: { $in: memberIds } }),
-      User.find({ _id: { $in: memberIds } }).select("displayName"),
+      User.find({ _id: { $in: memberIds } }).select("displayName avatarContentType"),
     ]);
 
     return aggregated.map((a) => {
@@ -409,6 +412,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       return {
         userId: a._id.toString(),
         displayName: user?.displayName ?? "Unknown",
+        hasAvatar: Boolean(user?.avatarContentType),
         completionCount: a.completionCount,
         currentStreak: membership?.currentStreak ?? 0,
         longestStreak: membership?.longestStreak ?? 0,
@@ -494,13 +498,25 @@ async function advanceRotation(chore: ChoreDoc | null, householdId: string): Pro
   await chore.save();
 }
 
-function userSummaryFromPopulated(
-  value: unknown,
-): { id: string; displayName: string } | null {
+type UserSummaryDoc = {
+  _id: Types.ObjectId;
+  displayName: string;
+  avatarContentType?: string | null;
+};
+
+function userSummaryFromPopulated(value: unknown): {
+  id: string;
+  displayName: string;
+  hasAvatar: boolean;
+} | null {
   if (!value || value instanceof Types.ObjectId) return null;
-  const user = value as { _id?: Types.ObjectId; displayName?: string };
+  const user = value as Partial<UserSummaryDoc>;
   if (!user._id || !user.displayName) return null;
-  return { id: user._id.toString(), displayName: user.displayName };
+  return {
+    id: user._id.toString(),
+    displayName: user.displayName,
+    hasAvatar: Boolean(user.avatarContentType),
+  };
 }
 
 function toLocalDateString(date: Date, tz: string): string {

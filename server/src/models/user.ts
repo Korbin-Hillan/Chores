@@ -6,6 +6,8 @@ const userSchema = new Schema(
     passwordHash: { type: String, required: true },
     displayName: { type: String, required: true, trim: true },
     currentHouseholdId: { type: Schema.Types.ObjectId, ref: "Household", default: null },
+    avatar: { type: Buffer, default: null, select: false },
+    avatarContentType: { type: String, enum: ["image/jpeg", "image/png", null], default: null },
   },
   { timestamps: true, versionKey: false },
 );
@@ -17,6 +19,7 @@ export type SafeUser = {
   email: string;
   displayName: string;
   currentHouseholdId: string | null;
+  hasAvatar: boolean;
 };
 
 export function toSafeUser(doc: UserDoc): SafeUser {
@@ -27,6 +30,7 @@ export function toSafeUser(doc: UserDoc): SafeUser {
     currentHouseholdId: doc.currentHouseholdId
       ? (doc.currentHouseholdId as Types.ObjectId).toHexString()
       : null,
+    hasAvatar: Boolean(doc.avatarContentType),
   };
 }
 

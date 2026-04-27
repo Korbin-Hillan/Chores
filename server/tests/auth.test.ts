@@ -120,3 +120,47 @@ describe("POST /auth/refresh", () => {
     expect(res.statusCode).toBe(401);
   });
 });
+
+describe("User avatars", () => {
+  it("stores, fetches, and removes the current user's avatar", async () => {
+    const signup = await app.inject({
+      method: "POST",
+      url: "/auth/signup",
+      payload: { email: "avatar@example.com", password: "password123", displayName: "Avatar User" },
+    });
+    const { accessToken, user } = signup.json<{ accessToken: string; user: { id: string } }>();
+    const imageBase64 = Buffer.from("fake image bytes").toString("base64");
+
+    const update = await app.inject({
+      method: "PUT",
+      url: "/auth/me/avatar",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { imageBase64, mimeType: "image/png" },
+    });
+    expect(update.statusCode).toBe(200);
+    expect(update.json<{ hasAvatar: boolean }>().hasAvatar).toBe(true);
+
+    const photo = await app.inject({
+      method: "GET",
+      url: `/auth/users/${user.id}/avatar`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(photo.statusCode).toBe(200);
+    expect(photo.headers["content-type"]).toContain("image/png");
+    expect(photo.body).toBe("fake image bytes");
+
+    const remove = await app.inject({
+      method: "DELETE",
+      url: "/auth/me/avatar",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(remove.statusCode).toBe(204);
+
+    const missing = await app.inject({
+      method: "GET",
+      url: `/auth/users/${user.id}/avatar`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+});

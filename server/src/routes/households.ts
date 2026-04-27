@@ -77,6 +77,7 @@ export async function householdRoutes(app: FastifyInstance): Promise<void> {
     const members = allMemberships.map((m) => ({
       ...toSafeMember(m),
       displayName: users.find((u) => u._id.equals(m.userId))?.displayName ?? "Unknown",
+      hasAvatar: Boolean(users.find((u) => u._id.equals(m.userId))?.avatarContentType),
     }));
 
     return { household: toSafeHousehold(household), members };

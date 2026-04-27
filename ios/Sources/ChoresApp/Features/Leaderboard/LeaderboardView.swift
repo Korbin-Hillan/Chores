@@ -92,6 +92,12 @@ struct LeaderboardRow: View {
             Text(rankEmoji)
                 .font(rank <= 3 ? .title2 : .body)
                 .frame(width: 32)
+            UserAvatarView(
+                userId: entry.userId,
+                displayName: entry.displayName,
+                hasAvatar: entry.hasAvatar ?? false,
+                size: 38
+            )
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text(entry.displayName)
@@ -361,21 +367,31 @@ struct RewardsView: View {
         if canReview && !viewModel.pendingRedemptions.isEmpty {
             Section("Pending approval") {
                 ForEach(viewModel.pendingRedemptions) { redemption in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(redemption.rewardTitleSnapshot)
-                            .font(.subheadline.weight(.semibold))
-                        Text("\(redemption.requestedBy?.displayName ?? "Someone") wants to redeem \(redemption.costPointsSnapshot) pts")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        HStack {
-                            Button("Approve", systemImage: "checkmark.circle.fill") {
-                                Task { await viewModel.approve(redemption, householdId: householdId) }
+                    HStack(alignment: .top, spacing: 10) {
+                        if let user = redemption.requestedBy {
+                            UserAvatarView(
+                                userId: user.id,
+                                displayName: user.displayName,
+                                hasAvatar: user.hasAvatar ?? false,
+                                size: 34
+                            )
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(redemption.rewardTitleSnapshot)
+                                .font(.subheadline.weight(.semibold))
+                            Text("\(redemption.requestedBy?.displayName ?? "Someone") wants to redeem \(redemption.costPointsSnapshot) pts")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            HStack {
+                                Button("Approve", systemImage: "checkmark.circle.fill") {
+                                    Task { await viewModel.approve(redemption, householdId: householdId) }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                Button("Reject", systemImage: "xmark.circle") {
+                                    Task { await viewModel.reject(redemption, householdId: householdId) }
+                                }
+                                .buttonStyle(.bordered)
                             }
-                            .buttonStyle(.borderedProminent)
-                            Button("Reject", systemImage: "xmark.circle") {
-                                Task { await viewModel.reject(redemption, householdId: householdId) }
-                            }
-                            .buttonStyle(.bordered)
                         }
                     }
                     .padding(.vertical, 4)

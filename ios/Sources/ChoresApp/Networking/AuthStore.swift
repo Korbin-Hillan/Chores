@@ -203,6 +203,19 @@ final class AuthStore {
         try? KeychainStore.set(id, for: .currentHouseholdId)
     }
 
+    func refreshCurrentUser() async {
+        do {
+            let user: APIUser = try await client.send(path: "/auth/me")
+            if let data = try? JSONEncoder().encode(user),
+               let userString = String(data: data, encoding: .utf8) {
+                try? KeychainStore.set(userString, for: .currentUser)
+            }
+            restoreState(for: user)
+        } catch {
+            logger.warning("Refresh current user failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     // MARK: - Internals
 
     private func configureClient() async {

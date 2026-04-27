@@ -33,6 +33,12 @@ struct HouseholdSettingsView: View {
                 Section("Members (\(detail.members.count))") {
                     ForEach(detail.members) { member in
                         HStack {
+                            UserAvatarView(
+                                userId: member.userId,
+                                displayName: member.displayName ?? member.userId,
+                                hasAvatar: member.hasAvatar ?? false,
+                                size: 36
+                            )
                             VStack(alignment: .leading) {
                                 Text(member.displayName ?? member.userId)
                                     .font(.body)

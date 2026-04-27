@@ -78,26 +78,34 @@ struct ChoreDetailView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(historyViewModel.items) { item in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.completedBy.displayName)
-                                .font(.subheadline.weight(.medium))
-                            Text(historyTimestamp(for: item))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if let notes = item.notes, !notes.isEmpty {
-                                Text(notes)
+                        HStack(alignment: .top, spacing: 10) {
+                            UserAvatarView(
+                                userId: item.completedBy.id,
+                                displayName: item.completedBy.displayName,
+                                hasAvatar: item.completedBy.hasAvatar ?? false,
+                                size: 34
+                            )
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.completedBy.displayName)
+                                    .font(.subheadline.weight(.medium))
+                                Text(historyTimestamp(for: item))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                            }
-                            if item.reviewStatus == "pending" {
-                                Label("Pending review", systemImage: "hourglass")
-                                    .font(.caption)
-                                    .foregroundStyle(.orange)
-                            }
-                            if item.hasPhoto {
-                                CompletionPhotoView(householdId: householdId, completionId: item.id)
-                                    .frame(width: 84, height: 84)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                if let notes = item.notes, !notes.isEmpty {
+                                    Text(notes)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if item.reviewStatus == "pending" {
+                                    Label("Pending review", systemImage: "hourglass")
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
+                                }
+                                if item.hasPhoto {
+                                    CompletionPhotoView(householdId: householdId, completionId: item.id)
+                                        .frame(width: 84, height: 84)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
                             }
                         }
                         .padding(.vertical, 2)

@@ -15,6 +15,7 @@ struct APIUser: Codable, Identifiable {
     let email: String
     let displayName: String
     let currentHouseholdId: String?
+    let hasAvatar: Bool?
 }
 
 // MARK: - Household
@@ -42,6 +43,7 @@ struct APIHouseholdMember: Decodable, Identifiable {
     let longestStreak: Int
     let lastCompletionAt: String?
     let displayName: String?
+    let hasAvatar: Bool?
 }
 
 struct OpenAIKeyStatus: Decodable {
@@ -128,6 +130,7 @@ struct FeedItem: Decodable, Identifiable {
 struct FeedUser: Decodable {
     let id: String
     let displayName: String
+    let hasAvatar: Bool?
 }
 
 struct ChoreCompletionHistoryItem: Decodable, Identifiable {
@@ -146,6 +149,7 @@ struct LeaderboardEntry: Decodable, Identifiable {
     var id: String { userId }
     let userId: String
     let displayName: String
+    let hasAvatar: Bool?
     let completionCount: Int
     let currentStreak: Int
     let longestStreak: Int
@@ -297,6 +301,11 @@ struct UpdateRewardBody: Encodable {
 
 struct RejectRewardRedemptionBody: Encodable {
     let rejectionReason: String?
+}
+
+struct UpdateAvatarBody: Encodable {
+    let imageBase64: String
+    let mimeType: String
 }
 
 struct TextGenerationBody: Encodable {

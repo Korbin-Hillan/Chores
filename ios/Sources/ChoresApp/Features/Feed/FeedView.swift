@@ -67,12 +67,19 @@ struct FeedItemRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .font(.title2)
+            UserAvatarView(
+                userId: item.completedBy.id,
+                displayName: item.completedBy.displayName,
+                hasAvatar: item.completedBy.hasAvatar ?? false,
+                size: 40
+            )
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(item.completedBy.displayName) completed **\(item.chore?.title ?? "a chore")**")
-                    .font(.subheadline)
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("\(item.completedBy.displayName) completed **\(item.chore?.title ?? "a chore")**")
+                }
+                .font(.subheadline)
                 if let socialText {
                     Text(socialText)
                         .font(.caption)

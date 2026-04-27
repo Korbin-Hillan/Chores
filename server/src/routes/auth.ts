@@ -21,6 +21,11 @@ const refreshBody = z.object({
   refreshToken: z.string().min(1),
 });
 
+const avatarBody = z.object({
+  imageBase64: z.string().min(1),
+  mimeType: z.enum(["image/jpeg", "image/png"]),
+});
+
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post("/signup", async (request, reply) => {
     const body = signUpBody.safeParse(request.body);
@@ -77,6 +82,47 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const accessToken = app.jwt.sign({ userId: user._id.toHexString() });
 
     return reply.send({ accessToken, refreshToken: result.newToken, user: toSafeUser(user) });
+  });
+
+  app.get("/me", { preHandler: [requireAuth] }, async (request) => {
+    const user = await User.findById(request.user.userId);
+    if (!user) throw new AppError(404, "NOT_FOUND", "User not found");
+    return toSafeUser(user);
+  });
+
+  app.put("/me/avatar", { preHandler: [requireAuth] }, async (request) => {
+    const body = avatarBody.safeParse(request.body);
+    if (!body.success) throw new AppError(400, "VALIDATION_FAILED", body.error.message);
+
+    const buffer = Buffer.from(body.data.imageBase64, "base64");
+    if (buffer.length > 300_000) {
+      throw new AppError(400, "AVATAR_TOO_LARGE", "Avatar image must be 300 KB or smaller");
+    }
+
+    const user = await User.findByIdAndUpdate(
+      request.user.userId,
+      { avatar: buffer, avatarContentType: body.data.mimeType },
+      { new: true },
+    );
+    if (!user) throw new AppError(404, "NOT_FOUND", "User not found");
+    return toSafeUser(user);
+  });
+
+  app.delete("/me/avatar", { preHandler: [requireAuth] }, async (request, reply) => {
+    await User.findByIdAndUpdate(request.user.userId, {
+      avatar: null,
+      avatarContentType: null,
+    });
+    return reply.status(204).send();
+  });
+
+  app.get("/users/:userId/avatar", { preHandler: [requireAuth] }, async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    const user = await User.findById(userId).select("+avatar avatarContentType");
+    if (!user?.avatar || !user.avatarContentType) {
+      throw new AppError(404, "NOT_FOUND", "Avatar not found");
+    }
+    return reply.type(user.avatarContentType).send(user.avatar);
   });
 
   app.post("/logout", { preHandler: [requireAuth] }, async (request, reply) => {

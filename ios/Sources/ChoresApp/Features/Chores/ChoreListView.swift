@@ -91,11 +91,16 @@ struct TodayView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     if let currentMember {
-                        Label {
-                            Text("\(currentMember.displayName ?? authStore.currentUser?.displayName ?? "You") \(currentMember.currentStreak)")
-                        } icon: {
+                        HStack(spacing: 6) {
+                            UserAvatarView(
+                                userId: currentMember.userId,
+                                displayName: currentMember.displayName ?? authStore.currentUser?.displayName ?? "You",
+                                hasAvatar: currentMember.hasAvatar ?? authStore.currentUser?.hasAvatar ?? false,
+                                size: 26
+                            )
                             Image(systemName: "flame.fill")
                                 .foregroundStyle(.orange)
+                            Text("\(currentMember.currentStreak)")
                         }
                         .font(.subheadline.weight(.semibold))
                     }
@@ -120,6 +125,8 @@ struct TodayView: View {
                 title: "Overdue",
                 tint: .red,
                 chores: overdueChores,
+                viewModel: viewModel,
+                householdId: householdId,
                 householdMembers: viewModel.householdMembers,
                 isCompletingChoreId: isCompletingChoreId,
                 onComplete: completeFromSwipe,
@@ -130,6 +137,8 @@ struct TodayView: View {
                 title: "Due today",
                 tint: .orange,
                 chores: dueTodayChores,
+                viewModel: viewModel,
+                householdId: householdId,
                 householdMembers: viewModel.householdMembers,
                 isCompletingChoreId: isCompletingChoreId,
                 onComplete: completeFromSwipe,
@@ -140,6 +149,8 @@ struct TodayView: View {
                 title: "Quick wins",
                 tint: .gray,
                 chores: quickWinChores,
+                viewModel: viewModel,
+                householdId: householdId,
                 householdMembers: viewModel.householdMembers,
                 isCompletingChoreId: isCompletingChoreId,
                 onComplete: completeFromSwipe,
@@ -151,21 +162,7 @@ struct TodayView: View {
 
     private func completeFromSwipe(_ chore: APIChore) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        guard !chore.requiresPhotoEvidence else {
-            completionChore = chore
-            return
-        }
-        isCompletingChoreId = chore.id
-        Task {
-            let response = await viewModel.completeChore(chore.id, householdId: householdId)
-            isCompletingChoreId = nil
-            if let streak = response?.membership.currentStreak, [7, 30, 100].contains(streak) {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                    milestoneStreak = streak
-                }
-            }
-        }
+        completionChore = chore
     }
 
     private func sortByDueThenTitle(_ lhs: APIChore, _ rhs: APIChore) -> Bool {
@@ -182,6 +179,8 @@ private struct ChoreBucketSection: View {
     let title: String
     let tint: Color
     let chores: [APIChore]
+    let viewModel: ChoresViewModel
+    let householdId: String
     let householdMembers: [APIHouseholdMember]
     let isCompletingChoreId: String?
     let onComplete: (APIChore) -> Void
@@ -195,11 +194,15 @@ private struct ChoreBucketSection: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(chores) { chore in
-                    ChoreRow(
-                        chore: chore,
-                        schedule: chore.scheduleSnapshot(),
-                        assigneeName: displayName(for: chore.assignedToUserId)
-                    )
+                    NavigationLink {
+                        ChoreDetailView(chore: chore, viewModel: viewModel, householdId: householdId)
+                    } label: {
+                        ChoreRow(
+                            chore: chore,
+                            schedule: chore.scheduleSnapshot(),
+                            assigneeName: displayName(for: chore.assignedToUserId)
+                        )
+                    }
                     .opacity(isCompletingChoreId == chore.id ? 0.5 : 1)
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button("Complete", systemImage: "checkmark") {
@@ -490,9 +493,16 @@ struct ChoreListView: View {
         if canReviewCompletions && !viewModel.pendingReviewItems.isEmpty {
             Section("Pending review") {
                 ForEach(viewModel.pendingReviewItems) { item in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("\(item.completedBy.displayName) finished \(item.chore?.title ?? "a chore")")
-                            .font(.subheadline.weight(.semibold))
+                    HStack(alignment: .top, spacing: 10) {
+                        UserAvatarView(
+                            userId: item.completedBy.id,
+                            displayName: item.completedBy.displayName,
+                            hasAvatar: item.completedBy.hasAvatar ?? false,
+                            size: 34
+                        )
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("\(item.completedBy.displayName) finished \(item.chore?.title ?? "a chore")")
+                                .font(.subheadline.weight(.semibold))
                         if item.hasPhoto {
                             CompletionPhotoView(householdId: householdId, completionId: item.id)
                                 .frame(height: 120)
@@ -507,6 +517,7 @@ struct ChoreListView: View {
                                 Task { await viewModel.rejectCompletion(item.id, householdId: householdId) }
                             }
                             .buttonStyle(.bordered)
+                        }
                         }
                     }
                     .padding(.vertical, 4)
@@ -674,6 +685,11 @@ private struct AssignmentBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(isRotation ? "🔄" : "👤")
+            Text(initials)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(.tint, in: Circle())
             Text(name)
                 .lineLimit(1)
         }
@@ -681,6 +697,12 @@ private struct AssignmentBadge: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(.thinMaterial, in: Capsule())
+    }
+
+    private var initials: String {
+        let parts = name.split(separator: " ").map(String.init)
+        let letters = parts.prefix(2).compactMap { $0.first }.map { String($0).uppercased() }
+        return letters.isEmpty ? String(name.prefix(2)).uppercased() : letters.joined()
     }
 }
 
