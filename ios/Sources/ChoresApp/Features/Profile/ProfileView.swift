@@ -23,6 +23,7 @@ final class HouseholdPickerViewModel {
 struct ProfileView: View {
     @Environment(AuthStore.self) private var authStore
     @State private var showSignOutConfirm = false
+    @State private var biometricErrorMessage: String?
 
     var user: APIUser? { authStore.currentUser }
 
@@ -51,6 +52,29 @@ struct ProfileView: View {
                     }
                 }
 
+                Section("Security") {
+                    if authStore.supportsBiometricUnlock {
+                        Toggle(
+                            "Require \(authStore.biometricUnlockName)",
+                            isOn: Binding(
+                                get: { authStore.biometricUnlockEnabled },
+                                set: { enabled in
+                                    Task {
+                                        do {
+                                            try await authStore.setBiometricUnlockEnabled(enabled)
+                                        } catch {
+                                            biometricErrorMessage = error.localizedDescription
+                                        }
+                                    }
+                                }
+                            )
+                        )
+                    } else {
+                        LabeledContent("Biometric unlock", value: "Not available")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("Household") {
                     NavigationLink("Switch household") {
                         HouseholdPickerView()
@@ -73,6 +97,14 @@ struct ProfileView: View {
                     Task { await authStore.signOut() }
                 }
                 Button("Cancel", role: .cancel) {}
+            }
+            .alert("Security", isPresented: Binding(
+                get: { biometricErrorMessage != nil },
+                set: { if !$0 { biometricErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { biometricErrorMessage = nil }
+            } message: {
+                Text(biometricErrorMessage ?? "")
             }
         }
     }

@@ -85,11 +85,10 @@ export async function choreRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete("/:choreId", async (request, reply) => {
     const { householdId, choreId } = request.params as { householdId: string; choreId: string };
-    const chore = await Chore.findOneAndUpdate(
-      { _id: choreId, householdId },
-      { archived: true },
-    );
-    if (!chore) throw new AppError(404, "NOT_FOUND", "Chore not found");
+    const result = await Chore.deleteOne({ _id: choreId, householdId });
+    if (result.deletedCount === 0) throw new AppError(404, "NOT_FOUND", "Chore not found");
+
+    await Completion.deleteMany({ householdId, choreId });
     return reply.status(204).send();
   });
 

@@ -9,56 +9,130 @@ final class AuthStore {
     enum State {
         case loading
         case unauthenticated
+        case locked(APIUser)
         case authenticated(APIUser)
+    }
+
+    private enum PreferenceKey {
+        static let biometricUnlockEnabled = "com.korbinhillan.choresapp.biometricUnlockEnabled"
     }
 
     private(set) var state: State = .loading
     private(set) var currentHouseholdId: String?
+    private(set) var biometricUnlockEnabled = UserDefaults.standard.bool(
+        forKey: PreferenceKey.biometricUnlockEnabled
+    )
 
     var isLoggedIn: Bool {
-        if case .authenticated = state { return true }
-        return false
+        switch state {
+        case .authenticated, .locked:
+            return true
+        case .loading, .unauthenticated:
+            return false
+        }
     }
 
     var currentUser: APIUser? {
-        if case .authenticated(let user) = state { return user }
-        return nil
+        switch state {
+        case .authenticated(let user), .locked(let user):
+            return user
+        case .loading, .unauthenticated:
+            return nil
+        }
+    }
+
+    var supportsBiometricUnlock: Bool {
+        BiometricAuth.isAvailable
+    }
+
+    var biometricUnlockName: String {
+        BiometricAuth.localizedBiometryName
     }
 
     private let client = APIClient.shared
 
     init() {
-        Task { await self.bootstrap() }
+        Task { await bootstrap() }
     }
 
     // MARK: - Bootstrap
 
     func bootstrap() async {
-        guard let token = KeychainStore.get(.accessToken) else {
+        await configureClient()
+
+        let cachedUser = loadCurrentUser()
+        currentHouseholdId = KeychainStore.get(.currentHouseholdId) ?? cachedUser?.currentHouseholdId
+
+        let accessToken = KeychainStore.get(.accessToken)
+        let refreshToken = KeychainStore.get(.refreshToken)
+
+        guard accessToken != nil || refreshToken != nil else {
+            clearLocalSession()
             state = .unauthenticated
             return
         }
-        await client.setAccessToken(token)
-        await client.setTokenRefresher { [weak self] in
-            try await self?.performRefresh() ?? { throw APIError.unauthorized }()
-        }
-        await client.setOnUnauthorized { [weak self] in
-            await self?.signOut()
+
+        if let accessToken {
+            await client.setAccessToken(accessToken)
         }
 
-        // Try a lightweight call to verify the token is still valid
+        if let cachedUser {
+            restoreState(for: cachedUser)
+        }
+
+        if accessToken == nil, let refreshToken {
+            do {
+                let response = try await refreshSession(using: refreshToken)
+                await persistSession(response)
+                restoreState(for: response.user)
+            } catch {
+                logger.error("Bootstrap refresh failed: \(error.localizedDescription, privacy: .public)")
+                if cachedUser == nil {
+                    clearLocalSession()
+                    state = .unauthenticated
+                }
+                return
+            }
+        }
+
         do {
             let households: [APIHousehold] = try await client.send(path: "/households/me")
-            if let user = await loadCurrentUser() {
-                let lastHousehold = KeychainStore.get(.currentHouseholdId) ?? user.currentHouseholdId
-                    ?? households.first?.id
-                currentHouseholdId = lastHousehold
-                state = .authenticated(user)
-            } else {
+            if let user = loadCurrentUser() {
+                updateSelectedHousehold(for: user, households: households)
+                if case .loading = state {
+                    restoreState(for: user)
+                }
+            } else if let refreshToken = KeychainStore.get(.refreshToken) {
+                let response = try await refreshSession(using: refreshToken)
+                await persistSession(response)
+                updateSelectedHousehold(for: response.user, households: households)
+                restoreState(for: response.user)
+            } else if cachedUser == nil {
+                clearLocalSession()
                 state = .unauthenticated
             }
+        } catch let err as APIError {
+            switch err {
+            case .unauthorized:
+                clearLocalSession()
+                await client.setAccessToken(nil)
+                state = .unauthenticated
+            case .transport:
+                logger.warning("Bootstrap transport error: \(err.localizedDescription, privacy: .public)")
+                if cachedUser == nil {
+                    state = .unauthenticated
+                }
+            default:
+                logger.error("Bootstrap validation failed: \(err.localizedDescription, privacy: .public)")
+                if cachedUser == nil {
+                    state = .unauthenticated
+                }
+            }
         } catch {
-            state = .unauthenticated
+            logger.error("Bootstrap validation failed: \(error.localizedDescription, privacy: .public)")
+            if cachedUser == nil {
+                state = .unauthenticated
+            }
         }
     }
 
@@ -76,11 +150,49 @@ final class AuthStore {
         await handleAuthResponse(response)
     }
 
+    func unlockWithBiometrics() async throws {
+        guard case .locked(let user) = state else { return }
+        guard supportsBiometricUnlock else {
+            throw BiometricAuth.BiometricError.unavailable
+        }
+
+        let didAuthenticate = await BiometricAuth.authenticate(
+            reason: "Unlock your saved Chores session."
+        )
+        guard didAuthenticate else {
+            throw BiometricAuth.BiometricError.failed
+        }
+
+        state = .authenticated(user)
+    }
+
+    func setBiometricUnlockEnabled(_ enabled: Bool) async throws {
+        if enabled {
+            guard supportsBiometricUnlock else {
+                throw BiometricAuth.BiometricError.unavailable
+            }
+
+            let didAuthenticate = await BiometricAuth.authenticate(
+                reason: "Enable \(biometricUnlockName) to unlock your saved Chores session."
+            )
+            guard didAuthenticate else {
+                throw BiometricAuth.BiometricError.failed
+            }
+        }
+
+        biometricUnlockEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: PreferenceKey.biometricUnlockEnabled)
+    }
+
     func signOut() async {
+        let existingToken = KeychainStore.get(.accessToken)
+
+        await client.setOnUnauthorized(nil)
+        await client.setTokenRefresher(nil)
+        await client.setAccessToken(existingToken)
         try? await client.send(path: "/auth/logout", method: "POST", body: Optional<String>.none)
-        KeychainStore.delete(.accessToken)
-        KeychainStore.delete(.refreshToken)
-        KeychainStore.delete(.currentHouseholdId)
+
+        clearLocalSession()
         await client.setAccessToken(nil)
         currentHouseholdId = nil
         state = .unauthenticated
@@ -93,45 +205,87 @@ final class AuthStore {
 
     // MARK: - Internals
 
-    private func handleAuthResponse(_ response: AuthResponse) async {
-        try? KeychainStore.set(response.accessToken, for: .accessToken)
-        try? KeychainStore.set(response.refreshToken, for: .refreshToken)
-        await client.setAccessToken(response.accessToken)
+    private func configureClient() async {
         await client.setTokenRefresher { [weak self] in
             try await self?.performRefresh() ?? { throw APIError.unauthorized }()
         }
         await client.setOnUnauthorized { [weak self] in
             await self?.signOut()
         }
+    }
 
-        let householdId = response.user.currentHouseholdId
-        currentHouseholdId = householdId
-        if let householdId {
-            try? KeychainStore.set(householdId, for: .currentHouseholdId)
+    private func handleAuthResponse(_ response: AuthResponse) async {
+        await persistSession(response)
+        restoreState(for: response.user)
+    }
+
+    private func persistSession(_ response: AuthResponse) async {
+        try? KeychainStore.set(response.accessToken, for: .accessToken)
+        try? KeychainStore.set(response.refreshToken, for: .refreshToken)
+
+        if let data = try? JSONEncoder().encode(response.user),
+           let userString = String(data: data, encoding: .utf8) {
+            try? KeychainStore.set(userString, for: .currentUser)
         }
-        state = .authenticated(response.user)
+
+        updateSelectedHousehold(for: response.user)
+        await client.setAccessToken(response.accessToken)
+        await configureClient()
     }
 
     private func performRefresh() async throws -> String {
         guard let refreshToken = KeychainStore.get(.refreshToken) else {
             throw APIError.unauthorized
         }
+
+        let response = try await refreshSession(using: refreshToken)
+        await persistSession(response)
+        return response.accessToken
+    }
+
+    private func refreshSession(using refreshToken: String) async throws -> AuthResponse {
         struct RefreshBody: Encodable { let refreshToken: String }
-        let response: AuthResponse = try await client.send(
+        return try await client.send(
             path: "/auth/refresh",
             method: "POST",
             body: RefreshBody(refreshToken: refreshToken)
         )
-        try? KeychainStore.set(response.accessToken, for: .accessToken)
-        try? KeychainStore.set(response.refreshToken, for: .refreshToken)
-        return response.accessToken
     }
 
-    private func loadCurrentUser() async -> APIUser? {
-        // Decode userId from the access token (JWT payload is base64url encoded)
-        // Instead, we cache the user from the last auth response.
-        // Re-fetch is done via a lightweight endpoint if we add one later.
-        // For now, re-fetch from households list + stored info.
-        nil
+    private func restoreState(for user: APIUser) {
+        updateSelectedHousehold(for: user)
+        if biometricUnlockEnabled && supportsBiometricUnlock {
+            state = .locked(user)
+        } else {
+            state = .authenticated(user)
+        }
+    }
+
+    private func updateSelectedHousehold(for user: APIUser, households: [APIHousehold] = []) {
+        let selectedHouseholdId = KeychainStore.get(.currentHouseholdId)
+            ?? user.currentHouseholdId
+            ?? households.first?.id
+
+        currentHouseholdId = selectedHouseholdId
+        if let selectedHouseholdId {
+            try? KeychainStore.set(selectedHouseholdId, for: .currentHouseholdId)
+        } else {
+            KeychainStore.delete(.currentHouseholdId)
+        }
+    }
+
+    private func loadCurrentUser() -> APIUser? {
+        guard let storedUser = KeychainStore.get(.currentUser),
+              let data = storedUser.data(using: .utf8) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(APIUser.self, from: data)
+    }
+
+    private func clearLocalSession() {
+        KeychainStore.delete(.accessToken)
+        KeychainStore.delete(.refreshToken)
+        KeychainStore.delete(.currentHouseholdId)
+        KeychainStore.delete(.currentUser)
     }
 }

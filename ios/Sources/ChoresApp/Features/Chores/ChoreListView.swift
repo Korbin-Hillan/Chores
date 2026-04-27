@@ -5,7 +5,7 @@ struct ChoreListView: View {
     @Environment(AuthStore.self) private var authStore
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = ChoresViewModel()
-    @State private var showChoreEditor = false
+    @State private var showAddChore = false
     @State private var showAddRoom = false
     @State private var showManageRooms = false
     @State private var showGenerate = false
@@ -50,14 +50,14 @@ struct ChoreListView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Menu("View", systemImage: "line.3.horizontal.decrease.circle") {
-                        Toggle("Show archived", isOn: $showArchived)
+                        Toggle("Show archived rooms", isOn: $showArchived)
                     }
                     Button("Generate", systemImage: "sparkles") { showGenerate = true }
                     Menu("Add", systemImage: "plus") {
                         Button("Add chore", systemImage: "checkmark.circle") {
                             selectedChore = nil
                             preferredRoomIdForNewChore = nil
-                            showChoreEditor = true
+                            showAddChore = true
                         }
                         Button("Add room", systemImage: "plus.rectangle") { showAddRoom = true }
                         Button("Manage rooms", systemImage: "slider.horizontal.3") { showManageRooms = true }
@@ -68,13 +68,22 @@ struct ChoreListView: View {
             .sheet(isPresented: $showAddRoom) {
                 RoomEditorView(viewModel: viewModel, householdId: householdId, room: nil)
             }
-            .sheet(isPresented: $showChoreEditor) {
+            .sheet(isPresented: $showAddChore) {
                 ChoreEditorView(
                     viewModel: viewModel,
                     householdId: householdId,
                     rooms: choreEditorRooms,
-                    chore: selectedChore,
+                    chore: nil,
                     preferredRoomId: preferredRoomIdForNewChore
+                )
+            }
+            .sheet(item: $selectedChore) { chore in
+                ChoreEditorView(
+                    viewModel: viewModel,
+                    householdId: householdId,
+                    rooms: choreEditorRooms,
+                    chore: chore,
+                    preferredRoomId: nil
                 )
             }
             .sheet(isPresented: $showGenerate) {
@@ -93,11 +102,11 @@ struct ChoreListView: View {
     private var choreList: some View {
         List {
             Section {
-                Toggle("Show archived chores and rooms", isOn: $showArchived)
+                Toggle("Show archived rooms", isOn: $showArchived)
             }
 
             ForEach(Array(visibleRooms.enumerated()), id: \.element.id) { _, room in
-                let chores = viewModel.chores(for: room.id, includeArchived: showArchived)
+                let chores = viewModel.chores(for: room.id)
                 Section {
                     if chores.isEmpty {
                         if room.archived {
@@ -108,7 +117,7 @@ struct ChoreListView: View {
                             Button {
                                 selectedChore = nil
                                 preferredRoomIdForNewChore = room.id
-                                showChoreEditor = true
+                                showAddChore = true
                             } label: {
                                 Label("Add a chore to \(room.name)", systemImage: "plus.circle")
                             }
@@ -121,22 +130,20 @@ struct ChoreListView: View {
                             } label: {
                                 ChoreRow(chore: chore, schedule: schedule)
                             }
-                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
                                 Button("Edit", systemImage: "pencil") {
                                     selectedChore = chore
-                                    showChoreEditor = true
                                 }
                                 .tint(.blue)
+                                Button("Delete", systemImage: "trash", role: .destructive) {
+                                    Task { await viewModel.deleteChore(chore.id, roomId: chore.roomId, householdId: householdId) }
+                                }
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button("Complete", systemImage: "checkmark") {
                                     Task { await viewModel.completeChore(chore.id, householdId: householdId) }
                                 }
                                 .tint(.green)
-                            }
-                            .swipeActions(edge: .trailing) {
-                                Button(chore.archived ? "Restore" : "Archive", systemImage: chore.archived ? "arrow.uturn.backward" : "archivebox") {
-                                    Task { await viewModel.setChoreArchived(chore, archived: !chore.archived, householdId: householdId) }
-                                }
-                                .tint(chore.archived ? .green : .orange)
                             }
                         }
                     }
@@ -152,7 +159,7 @@ struct ChoreListView: View {
                             Button {
                                 selectedChore = nil
                                 preferredRoomIdForNewChore = room.id
-                                showChoreEditor = true
+                                showAddChore = true
                             } label: {
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundStyle(Color.accentColor)
@@ -177,11 +184,6 @@ struct ChoreRow: View {
             HStack {
                 Text(chore.title)
                     .font(.body)
-                if chore.archived {
-                    Text("Archived")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
             HStack(spacing: 8) {
                 if chore.recurrence.kind != .none {

@@ -26,6 +26,8 @@
 	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Used to capture photos of rooms so the AI can suggest tailored chores.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Used to unlock your saved Chores session with Face ID.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Used to pick room photos so the AI can suggest tailored chores.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

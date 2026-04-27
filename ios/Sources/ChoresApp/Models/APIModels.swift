@@ -10,7 +10,7 @@ struct AuthResponse: Decodable {
     let user: APIUser
 }
 
-struct APIUser: Decodable, Identifiable {
+struct APIUser: Codable, Identifiable {
     let id: String
     let email: String
     let displayName: String

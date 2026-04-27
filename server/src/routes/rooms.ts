@@ -69,7 +69,7 @@ export async function roomRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError(
         400,
         "VALIDATION_FAILED",
-        "Move, archive, or delete the chores in this room before deleting it.",
+        "Move or delete the chores in this room before deleting it.",
       );
     }
 

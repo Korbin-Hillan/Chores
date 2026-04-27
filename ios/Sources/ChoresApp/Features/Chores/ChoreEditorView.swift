@@ -27,7 +27,7 @@ struct ChoreEditorView: View {
             Form {
                 Section("Details") {
                     TextField("Title", text: $title)
-                    TextField("Description (optional)", text: $description, axis: .vertical)
+                    TextField("Notes (optional)", text: $description, axis: .vertical)
                         .lineLimit(2...4)
                 }
                 Section("Room") {
@@ -83,13 +83,14 @@ struct ChoreEditorView: View {
             defer { isLoading = false }
             let mins = Int(estimatedMinutes)
             let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
+            let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
             let recurrence = buildRecurrence()
 
             if let chore {
                 let body = UpdateChoreBody(
                     roomId: selectedRoomId,
                     title: trimmedTitle,
-                    description: description.isEmpty ? nil : description,
+                    description: trimmedDescription.isEmpty ? nil : trimmedDescription,
                     recurrence: recurrence,
                     estimatedMinutes: mins,
                     points: points,
@@ -102,7 +103,7 @@ struct ChoreEditorView: View {
                 let body = CreateChoreBody(
                     roomId: selectedRoomId,
                     title: trimmedTitle,
-                    description: description.isEmpty ? nil : description,
+                    description: trimmedDescription.isEmpty ? nil : trimmedDescription,
                     recurrence: recurrence,
                     estimatedMinutes: mins,
                     points: points

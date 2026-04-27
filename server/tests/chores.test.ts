@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { startMongo, stopMongo, clearMongo } from "./helpers/mongo.js";
+import { Completion } from "../src/models/completion.js";
 
 process.env.MONGO_URI ??= "mongodb://placeholder/test";
 process.env.JWT_SECRET ??= "test_jwt_secret_at_least_thirty_two_characters_long_xx";
@@ -26,9 +27,9 @@ async function createAuthedHousehold() {
     method: "POST",
     url: "/auth/signup",
     payload: {
-      email: "rooms@example.com",
+      email: "chores@example.com",
       password: "password123",
-      displayName: "Room Admin",
+      displayName: "Chore Admin",
     },
   });
   const { accessToken } = signup.json<{ accessToken: string }>();
@@ -37,7 +38,7 @@ async function createAuthedHousehold() {
     method: "POST",
     url: "/households",
     headers: { authorization: `Bearer ${accessToken}` },
-    payload: { name: "Rooms Household" },
+    payload: { name: "Chores Household" },
   });
   const {
     household: { id: householdId },
@@ -46,49 +47,8 @@ async function createAuthedHousehold() {
   return { accessToken, householdId };
 }
 
-describe("room routes", () => {
-  it("allows duplicate room names within the same household", async () => {
-    const { accessToken, householdId } = await createAuthedHousehold();
-
-    const first = await app.inject({
-      method: "POST",
-      url: `/households/${householdId}/rooms`,
-      headers: { authorization: `Bearer ${accessToken}` },
-      payload: { name: "Bedroom" },
-    });
-    const second = await app.inject({
-      method: "POST",
-      url: `/households/${householdId}/rooms`,
-      headers: { authorization: `Bearer ${accessToken}` },
-      payload: { name: "Bedroom" },
-    });
-
-    expect(first.statusCode).toBe(201);
-    expect(second.statusCode).toBe(201);
-    expect(first.json<{ id: string }>().id).not.toBe(second.json<{ id: string }>().id);
-  });
-
-  it("deletes an empty room", async () => {
-    const { accessToken, householdId } = await createAuthedHousehold();
-
-    const roomRes = await app.inject({
-      method: "POST",
-      url: `/households/${householdId}/rooms`,
-      headers: { authorization: `Bearer ${accessToken}` },
-      payload: { name: "Closet" },
-    });
-    const { id: roomId } = roomRes.json<{ id: string }>();
-
-    const deleteRes = await app.inject({
-      method: "DELETE",
-      url: `/households/${householdId}/rooms/${roomId}`,
-      headers: { authorization: `Bearer ${accessToken}` },
-    });
-
-    expect(deleteRes.statusCode).toBe(204);
-  });
-
-  it("rejects deleting a room that still has chores", async () => {
+describe("chore routes", () => {
+  it("permanently deletes a chore and its completion history", async () => {
     const { accessToken, householdId } = await createAuthedHousehold();
 
     const roomRes = await app.inject({
@@ -106,21 +66,33 @@ describe("room routes", () => {
       payload: {
         roomId,
         title: "Wipe counters",
-        recurrence: { kind: "weekly", weekdays: [1] },
+        recurrence: { kind: "daily" },
         points: 1,
       },
     });
-    expect(choreRes.statusCode).toBe(201);
+    const { id: choreId } = choreRes.json<{ id: string }>();
+
+    const completeRes = await app.inject({
+      method: "POST",
+      url: `/households/${householdId}/chores/${choreId}/complete`,
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { tz: "UTC" },
+    });
+    expect(completeRes.statusCode).toBe(201);
 
     const deleteRes = await app.inject({
       method: "DELETE",
-      url: `/households/${householdId}/rooms/${roomId}`,
+      url: `/households/${householdId}/chores/${choreId}`,
       headers: { authorization: `Bearer ${accessToken}` },
     });
+    expect(deleteRes.statusCode).toBe(204);
 
-    expect(deleteRes.statusCode).toBe(400);
-    expect(deleteRes.json<{ error: { message: string } }>().error.message).toContain(
-      "Move or delete the chores in this room before deleting it.",
-    );
+    const listRes = await app.inject({
+      method: "GET",
+      url: `/households/${householdId}/chores?includeArchived=true`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(listRes.json<Array<{ id: string }>>()).toEqual([]);
+    await expect(Completion.countDocuments({ householdId, choreId })).resolves.toBe(0);
   });
 });

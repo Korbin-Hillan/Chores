@@ -6,6 +6,7 @@ enum KeychainStore {
         case accessToken = "com.korbinhillan.choresapp.accessToken"
         case refreshToken = "com.korbinhillan.choresapp.refreshToken"
         case currentHouseholdId = "com.korbinhillan.choresapp.currentHouseholdId"
+        case currentUser = "com.korbinhillan.choresapp.currentUser"
     }
 
     enum KeychainError: Error {

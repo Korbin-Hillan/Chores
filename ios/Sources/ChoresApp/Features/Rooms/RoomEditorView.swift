@@ -134,11 +134,7 @@ struct ManageRoomsView: View {
                         }
                         .tint(.blue)
                     }
-                    .swipeActions(edge: .trailing) {
-                        Button(room.archived ? "Restore" : "Archive", systemImage: room.archived ? "arrow.uturn.backward" : "archivebox") {
-                            Task { await viewModel.setRoomArchived(room.id, archived: !room.archived, householdId: householdId) }
-                        }
-                        .tint(room.archived ? .green : .orange)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button("Delete", systemImage: "trash", role: .destructive) {
                             roomPendingDelete = room
                         }
@@ -150,7 +146,7 @@ struct ManageRoomsView: View {
                 if rooms.isEmpty {
                     Text(showArchived ? "No rooms found." : "No active rooms.")
                 } else {
-                    Text("Delete only works after all chores have been moved, archived, or deleted.")
+                    Text("Delete only works after all chores have been moved or deleted.")
                 }
             }
         }
@@ -185,7 +181,7 @@ struct ManageRoomsView: View {
             }
             Button("Cancel", role: .cancel) { roomPendingDelete = nil }
         } message: {
-            Text("This permanently removes the room. Any chores still in it must be moved, archived, or deleted first.")
+            Text("This permanently removes the room. Any chores still in it must be moved or deleted first.")
         }
         .errorAlert($viewModel.error)
     }
