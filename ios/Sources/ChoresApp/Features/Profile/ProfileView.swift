@@ -22,6 +22,12 @@ final class HouseholdPickerViewModel {
     }
 }
 
+private enum ProfileDestination: Hashable {
+    case reminders
+    case switchHousehold
+    case householdSettings
+}
+
 struct ProfileView: View {
     @Environment(AuthStore.self) private var authStore
     @State private var showSignOutConfirm = false
@@ -73,9 +79,7 @@ struct ProfileView: View {
                 }
 
                 Section("Notifications") {
-                    NavigationLink("Reminder settings") {
-                        NotificationSettingsView()
-                    }
+                    NavigationLink("Reminder settings", value: ProfileDestination.reminders)
                 }
 
                 Section("Security") {
@@ -102,22 +106,30 @@ struct ProfileView: View {
                 }
 
                 Section("Household") {
-                    NavigationLink("Switch household") {
-                        HouseholdPickerView()
-                    }
-                    NavigationLink("Household settings") {
-                        HouseholdSettingsView()
-                    }
+                    NavigationLink("Switch household", value: ProfileDestination.switchHousehold)
+                    NavigationLink("Household settings", value: ProfileDestination.householdSettings)
                 }
 
                 Section {
-                    Button("Sign out", role: .destructive) {
+                    Button(role: .destructive) {
                         showSignOutConfirm = true
+                    } label: {
+                        Text("Sign out")
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    .frame(maxWidth: .infinity)
                 }
             }
             .navigationTitle("Profile")
+            .navigationDestination(for: ProfileDestination.self) { destination in
+                switch destination {
+                case .reminders:
+                    NotificationSettingsView()
+                case .switchHousehold:
+                    HouseholdPickerView()
+                case .householdSettings:
+                    HouseholdSettingsView()
+                }
+            }
             .loadingOverlay(isSavingAvatar)
             .onChange(of: selectedAvatarPhoto) { _, newValue in
                 Task { await uploadAvatar(from: newValue) }
@@ -127,11 +139,13 @@ struct ProfileView: View {
                     Task { await uploadAvatar(image: image) }
                 }
             }
-            .confirmationDialog("Sign out?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
+            .alert("Sign out", isPresented: $showSignOutConfirm) {
                 Button("Sign out", role: .destructive) {
                     Task { await authStore.signOut() }
                 }
                 Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You'll need to sign in again to continue.")
             }
             .alert("Security", isPresented: Binding(
                 get: { biometricErrorMessage != nil },

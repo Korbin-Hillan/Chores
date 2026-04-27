@@ -87,10 +87,8 @@ final class AuthStore {
                 restoreState(for: response.user)
             } catch {
                 logger.error("Bootstrap refresh failed: \(error.localizedDescription, privacy: .public)")
-                if cachedUser == nil {
-                    clearLocalSession()
-                    state = .unauthenticated
-                }
+                clearLocalSession()
+                state = .unauthenticated
                 return
             }
         }

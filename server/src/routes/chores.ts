@@ -156,7 +156,6 @@ export async function choreRoutes(app: FastifyInstance): Promise<void> {
       reviewStatus,
       photo: photo?.buffer ?? null,
       photoContentType: photo?.contentType ?? null,
-      photoExpiresAt: photo ? new Date(Date.now() + 86_400_000) : null,
     });
 
     const now = new Date();
@@ -198,8 +197,6 @@ export async function choreRoutes(app: FastifyInstance): Promise<void> {
 
     const chore = await Chore.findOne({ _id: choreId, householdId });
     if (!chore) throw new AppError(404, "NOT_FOUND", "Chore not found");
-    await cleanupExpiredCompletionPhotos(householdId);
-
     const completions = await Completion.find({ householdId, choreId })
       .sort({ completedAt: -1 })
       .limit(limitNum)
@@ -217,11 +214,7 @@ export async function choreRoutes(app: FastifyInstance): Promise<void> {
       completedAt: completion.completedAt.toISOString(),
       notes: completion.notes ?? null,
       reviewStatus: completion.reviewStatus ?? "approved",
-      hasPhoto: Boolean(
-        completion.photoContentType &&
-          completion.photoExpiresAt &&
-          completion.photoExpiresAt > new Date(),
-      ),
+      hasPhoto: Boolean(completion.photoContentType),
       assignedToUserIdAtCompletion: completion.assignedToUserIdAtCompletion?.toString() ?? null,
       completedBy: {
         id: completion.completedByUserId._id.toString(),
@@ -241,7 +234,6 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
     const { householdId } = request.params as { householdId: string };
     const { limit = "50" } = request.query as { limit?: string };
     const limitNum = Math.min(parseInt(limit, 10) || 50, 100);
-    await cleanupExpiredCompletionPhotos(householdId);
 
     const completions = await Completion.find({ householdId })
       .sort({ completedAt: -1 })
@@ -261,7 +253,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       completedAt: c.completedAt.toISOString(),
       notes: c.notes ?? null,
       reviewStatus: c.reviewStatus ?? "approved",
-      hasPhoto: Boolean(c.photoContentType && c.photoExpiresAt && c.photoExpiresAt > new Date()),
+      hasPhoto: Boolean(c.photoContentType),
       assignedToUserIdAtCompletion: c.assignedToUserIdAtCompletion?.toString() ?? null,
       assignedToAtCompletion: userSummaryFromPopulated(c.assignedToUserIdAtCompletion),
       chore: c.choreId ? toSafeChore(c.choreId) : null,
@@ -278,18 +270,10 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       householdId: string;
       completionId: string;
     };
-    await cleanupExpiredCompletionPhotos(householdId);
     const completion = await Completion.findOne({ _id: completionId, householdId }).select(
-      "+photo photoContentType photoExpiresAt",
+      "+photo photoContentType",
     );
     if (!completion?.photo || !completion.photoContentType) {
-      throw new AppError(404, "NOT_FOUND", "Photo not found");
-    }
-    if (completion.photoExpiresAt && completion.photoExpiresAt <= new Date()) {
-      completion.photo = null;
-      completion.photoContentType = null;
-      completion.photoExpiresAt = null;
-      await completion.save();
       throw new AppError(404, "NOT_FOUND", "Photo not found");
     }
     return reply.type(completion.photoContentType).send(completion.photo);
@@ -300,7 +284,6 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
     if (request.membership.role !== "admin" && request.membership.role !== "parent") {
       throw new AppError(403, "FORBIDDEN", "Only a parent can review completions");
     }
-    await cleanupExpiredCompletionPhotos(householdId);
 
     const completions = await Completion.find({ householdId, reviewStatus: "pending" })
       .sort({ completedAt: -1 })
@@ -316,7 +299,7 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       completedAt: c.completedAt.toISOString(),
       notes: c.notes ?? null,
       reviewStatus: c.reviewStatus ?? "approved",
-      hasPhoto: Boolean(c.photoContentType && c.photoExpiresAt && c.photoExpiresAt > new Date()),
+      hasPhoto: Boolean(c.photoContentType),
       assignedToUserIdAtCompletion: c.assignedToUserIdAtCompletion?.toString() ?? null,
       chore: c.choreId ? toSafeChore(c.choreId) : null,
       completedBy: {
@@ -419,13 +402,6 @@ export async function feedRoutes(app: FastifyInstance): Promise<void> {
       };
     });
   });
-}
-
-async function cleanupExpiredCompletionPhotos(householdId: string): Promise<void> {
-  await Completion.updateMany(
-    { householdId, photoExpiresAt: { $lte: new Date() } },
-    { $set: { photo: null, photoContentType: null, photoExpiresAt: null } },
-  );
 }
 
 async function normalizeAssignment(

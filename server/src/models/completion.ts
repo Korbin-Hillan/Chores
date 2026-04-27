@@ -25,7 +25,6 @@ const completionSchema = new Schema(
     rejectionReason: { type: String, default: null },
     photo: { type: Buffer, default: null, select: false },
     photoContentType: { type: String, default: null },
-    photoExpiresAt: { type: Date, default: null, index: true },
   },
   { versionKey: false },
 );
@@ -64,7 +63,7 @@ export function toSafeCompletion(doc: CompletionDoc): SafeCompletion {
       : null,
     reviewedAt: doc.reviewedAt ? doc.reviewedAt.toISOString() : null,
     rejectionReason: doc.rejectionReason ?? null,
-    hasPhoto: Boolean(doc.photoContentType && doc.photoExpiresAt && doc.photoExpiresAt > new Date()),
+    hasPhoto: Boolean(doc.photoContentType),
   };
 }
 

@@ -42,6 +42,32 @@ actor APIClient {
     var accessToken: String?
     var onUnauthorized: (@Sendable () async -> Void)?
     var tokenRefresher: (@Sendable () async throws -> String)?
+    private var refreshTask: Task<String, Error>?
+
+    private func performRefresh() async throws -> String {
+        if let existing = refreshTask {
+            return try await existing.value
+        }
+
+        let task = Task {
+            guard let refresher = tokenRefresher else {
+                throw APIError.unauthorized
+            }
+            return try await refresher()
+        }
+
+        self.refreshTask = task
+        defer { self.refreshTask = nil }
+
+        do {
+            let newToken = try await task.value
+            self.accessToken = newToken
+            return newToken
+        } catch {
+            await onUnauthorized?()
+            throw error
+        }
+    }
 
     init(baseURL: URL, session: URLSession = .shared) {
         self.baseURL = baseURL
@@ -134,13 +160,8 @@ actor APIClient {
             throw APIError.invalidResponse
         }
 
-        if http.statusCode == 401 {
-            guard let refresher = tokenRefresher else {
-                await onUnauthorized?()
-                throw APIError.unauthorized
-            }
-            let newToken = try await refresher()
-            accessToken = newToken
+        if http.statusCode == 401 && path != "/auth/refresh" {
+            let newToken = try await performRefresh()
             request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
 
             let (retryData, retryResponse) = try await fetch(request)
@@ -180,13 +201,8 @@ actor APIClient {
             throw APIError.invalidResponse
         }
 
-        if http.statusCode == 401 {
-            guard let refresher = tokenRefresher else {
-                await onUnauthorized?()
-                throw APIError.unauthorized
-            }
-            let newToken = try await refresher()
-            accessToken = newToken
+        if http.statusCode == 401 && path != "/auth/refresh" {
+            let newToken = try await performRefresh()
             request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
 
             let (retryData, retryResponse) = try await fetch(request)
