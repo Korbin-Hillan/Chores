@@ -11,6 +11,7 @@ import { householdRoutes } from "./routes/households.js";
 import { roomRoutes } from "./routes/rooms.js";
 import { choreRoutes, feedRoutes } from "./routes/chores.js";
 import { generationRoutes } from "./routes/generation.js";
+import { rewardRoutes } from "./routes/rewards.js";
 
 export interface BuildAppOptions {
   skipMongo?: boolean;
@@ -64,6 +65,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(roomRoutes, { prefix: "/households/:householdId/rooms" });
   await app.register(choreRoutes, { prefix: "/households/:householdId/chores" });
   await app.register(feedRoutes, { prefix: "/households/:householdId" });
+  await app.register(rewardRoutes, { prefix: "/households/:householdId/rewards" });
   await app.register(generationRoutes, { prefix: "/households/:householdId/generate" });
 
   return app;

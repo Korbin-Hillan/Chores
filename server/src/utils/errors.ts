@@ -8,6 +8,7 @@ export type ErrorCode =
   | "OPENAI_FAILED"
   | "PHOTO_REQUIRED"
   | "PHOTO_TOO_LARGE"
+  | "INSUFFICIENT_POINTS"
   | "INTERNAL";
 
 export class AppError extends Error {

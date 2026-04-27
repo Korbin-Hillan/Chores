@@ -151,6 +151,47 @@ struct LeaderboardEntry: Decodable, Identifiable {
     let longestStreak: Int
 }
 
+// MARK: - Rewards
+
+struct RewardBalance: Decodable {
+    let earnedPoints: Int
+    let approvedRedemptionPoints: Int
+    let pendingRedemptionPoints: Int
+    let availablePoints: Int
+}
+
+struct APIReward: Decodable, Identifiable {
+    let id: String
+    let householdId: String
+    let title: String
+    let description: String?
+    let costPoints: Int
+    let archived: Bool
+    let createdByUserId: String
+    let createdAt: String
+    let canRedeem: Bool?
+}
+
+struct RewardsResponse: Decodable {
+    let balance: RewardBalance
+    let rewards: [APIReward]
+}
+
+struct APIRewardRedemption: Decodable, Identifiable {
+    let id: String
+    let householdId: String
+    let rewardId: String
+    let requestedByUserId: String
+    let costPointsSnapshot: Int
+    let rewardTitleSnapshot: String
+    let status: String
+    let reviewedByUserId: String?
+    let reviewedAt: String?
+    let rejectionReason: String?
+    let createdAt: String
+    let requestedBy: FeedUser?
+}
+
 // MARK: - Generation
 
 struct ChoreDraft: Decodable, Identifiable {
@@ -239,6 +280,23 @@ struct RejectCompletionBody: Encodable {
 
 struct UpdateMemberRoleBody: Encodable {
     let role: String
+}
+
+struct CreateRewardBody: Encodable {
+    let title: String
+    let description: String?
+    let costPoints: Int
+}
+
+struct UpdateRewardBody: Encodable {
+    let title: String?
+    let description: String?
+    let costPoints: Int?
+    let archived: Bool?
+}
+
+struct RejectRewardRedemptionBody: Encodable {
+    let rejectionReason: String?
 }
 
 struct TextGenerationBody: Encodable {

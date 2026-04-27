@@ -17,6 +17,10 @@ struct MainTabView: View {
                 .tabItem {
                     Label("Leaderboard", systemImage: "trophy")
                 }
+            RewardsView()
+                .tabItem {
+                    Label("Rewards", systemImage: "gift")
+                }
             ProfileView()
                 .tabItem {
                     Label("Profile", systemImage: "person.circle")

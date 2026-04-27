@@ -158,9 +158,14 @@ struct CompletionPhotoView: View {
     let completionId: String
 
     @State private var image: UIImage?
+    @State private var showFullScreenPhoto = false
 
     var body: some View {
-        Group {
+        Button {
+            if image != nil {
+                showFullScreenPhoto = true
+            }
+        } label: {
             if let image {
                 Image(uiImage: image)
                     .resizable()
@@ -174,7 +179,13 @@ struct CompletionPhotoView: View {
                     }
             }
         }
+        .buttonStyle(.plain)
         .task(id: completionId) { await load() }
+        .fullScreenCover(isPresented: $showFullScreenPhoto) {
+            if let image {
+                FullScreenPhotoView(image: image)
+            }
+        }
     }
 
     private func load() async {
@@ -182,6 +193,73 @@ struct CompletionPhotoView: View {
             path: "/households/\(householdId)/completions/\(completionId)/photo"
         ) else { return }
         image = UIImage(data: data)
+    }
+}
+
+private struct FullScreenPhotoView: View {
+    let image: UIImage
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZoomableImage(image: image)
+                .background(Color.black)
+                .ignoresSafeArea(edges: .bottom)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+                .toolbarBackground(.black, for: .navigationBar)
+                .toolbarColorScheme(.dark, for: .navigationBar)
+        }
+    }
+}
+
+private struct ZoomableImage: UIViewRepresentable {
+    let image: UIImage
+
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        scrollView.delegate = context.coordinator
+        scrollView.minimumZoomScale = 1
+        scrollView.maximumZoomScale = 4
+        scrollView.backgroundColor = .black
+
+        let imageView = UIImageView(image: image)
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(imageView)
+        context.coordinator.imageView = imageView
+
+        NSLayoutConstraint.activate([
+            imageView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            imageView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+            imageView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
+        ])
+
+        return scrollView
+    }
+
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        context.coordinator.imageView?.image = image
+        _ = scrollView
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator: NSObject, UIScrollViewDelegate {
+        weak var imageView: UIImageView?
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+            imageView
+        }
     }
 }
 
@@ -203,17 +281,19 @@ struct CompleteChoreSheet: View {
                 Section("Completion") {
                     TextField("Notes (optional)", text: $notes, axis: .vertical)
                         .lineLimit(2...4)
-                    HStack {
-                        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                            Button {
-                                showCamera = true
-                            } label: {
-                                Label("Camera", systemImage: "camera")
-                            }
+                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                        Button {
+                            showCamera = true
+                        } label: {
+                            Label("Camera", systemImage: "camera")
                         }
-                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Label("Library", systemImage: "photo")
-                        }
+                    }
+                    PhotosPicker(
+                        selection: $selectedPhoto,
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        Label(photoData == nil ? "Choose from library" : "Change library photo", systemImage: "photo")
                     }
                     if let photoData, let image = UIImage(data: photoData) {
                         Image(uiImage: image)
@@ -279,27 +359,42 @@ struct CompleteChoreSheet: View {
 
     private func downscaledJPEG(from data: Data) -> Data? {
         guard let image = UIImage(data: data) else { return nil }
-        let maxSide: CGFloat = 800
-        let scale = min(1, maxSide / max(image.size.width, image.size.height))
-        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-
-        let renderer = UIGraphicsImageRenderer(size: targetSize)
-        let resized = renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: targetSize))
-        }
-        return resized.jpegData(compressionQuality: 0.7)
+        return compressedEvidenceJPEG(from: image)
     }
 
     private func downscaledJPEG(from image: UIImage) -> Data? {
-        let maxSide: CGFloat = 800
+        compressedEvidenceJPEG(from: image)
+    }
+
+    private func compressedEvidenceJPEG(from image: UIImage) -> Data? {
+        let targetBytes = 280_000
+        let maxSides: [CGFloat] = [800, 700, 600, 500, 400]
+        let qualities: [CGFloat] = [0.7, 0.6, 0.5, 0.42, 0.35]
+
+        var smallestData: Data?
+        for maxSide in maxSides {
+            let resized = resizedImage(image, maxSide: maxSide)
+            for quality in qualities {
+                guard let data = resized.jpegData(compressionQuality: quality) else { continue }
+                if data.count <= targetBytes {
+                    return data
+                }
+                if smallestData == nil || data.count < (smallestData?.count ?? Int.max) {
+                    smallestData = data
+                }
+            }
+        }
+        return smallestData
+    }
+
+    private func resizedImage(_ image: UIImage, maxSide: CGFloat) -> UIImage {
         let scale = min(1, maxSide / max(image.size.width, image.size.height))
         let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
 
         let renderer = UIGraphicsImageRenderer(size: targetSize)
-        let resized = renderer.image { _ in
+        return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
-        return resized.jpegData(compressionQuality: 0.7)
     }
 }
 
